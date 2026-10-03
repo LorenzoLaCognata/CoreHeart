@@ -28,14 +28,14 @@
 </head>
 <body>
   <div class="card">
-    <h1>Hello, Lorenzo</h1>
+    <h1>Hello, Lorenzo & Giulia</h1>
     <p id="suggestion">Loading today's suggestion&hellip;</p>
     <div class="clock" id="clock"></div>
   </div>
 
   <script>
     // Replace with your deployed Worker URL after `wrangler deploy`.
-    const WORKER_URL = "https://YOUR-WORKER-SUBDOMAIN.workers.dev";
+    const WORKER_URL = "https://core-heart.llacognata.workers.dev";
 
     // No secret here on purpose — the tablet's Fully Kiosk app injects the
     // X-Hub-Secret header at the HTTP layer (Settings > Web Content > Inject
@@ -47,7 +47,7 @@
         document.getElementById("suggestion").textContent = data.suggestion;
       } catch (err) {
         document.getElementById("suggestion").textContent =
-          "Hub is live. Suggestion engine not connected yet.";
+          "CoreHeart is live. Suggestion engine not connected yet.";
       }
     }
 
