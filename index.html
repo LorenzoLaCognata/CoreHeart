@@ -24,6 +24,54 @@
   h1 { font-size: 2.2rem; font-weight: 600; margin-bottom: 0.75rem; }
   p { font-size: 1.4rem; opacity: 0.88; line-height: 1.5; }
   p.error { color: #ff8a65; opacity: 1; }
+
+  .items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 1.75rem;
+  }
+  .item-btn {
+    font: inherit;
+    font-size: 1.15rem;
+    padding: 0.9rem 1.4rem;        /* generous touch target for a tablet */
+    border-radius: 999px;
+    border: 1px solid rgba(245, 245, 240, 0.3);
+    background: rgba(245, 245, 240, 0.08);
+    color: #f5f5f0;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  }
+  .item-btn:active { transform: scale(0.96); }
+  .item-btn.selected {
+    background: #4caf7d;
+    border-color: #4caf7d;
+    color: #0b0c10;
+  }
+
+  .mic-btn {
+    margin-top: 1.75rem;
+    font: inherit;
+    font-size: 1.1rem;
+    padding: 0.9rem 1.6rem;
+    border-radius: 999px;
+    border: 1px solid rgba(100, 181, 246, 0.5);
+    background: rgba(100, 181, 246, 0.12);
+    color: #90caf9;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .mic-btn:active { transform: scale(0.96); }
+  .mic-btn.listening {
+    background: rgba(100, 181, 246, 0.3);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
+
   .clock { font-size: 1rem; opacity: 0.5; margin-top: 2.5rem; letter-spacing: 0.02em; }
 </style>
 </head>
@@ -31,33 +79,70 @@
   <div class="card">
     <h1>Hello, Lorenzo & Giulia</h1>
     <p id="suggestion">Loading today's suggestion&hellip;</p>
+    <div class="items" id="items"></div>
+    <button id="mic-btn" class="mic-btn" aria-label="Voice command">🎤 Say a command</button>
     <div class="clock" id="clock"></div>
   </div>
 
   <script>
     const WORKER_URL = "https://core-heart.llacognata.workers.dev";
 
-    // No secret here on purpose — the tablet's Fully Kiosk app injects the
-    // X-Hub-Secret header at the HTTP layer (Settings > Web Content > Inject
-    // Custom Headers), so it never appears in this file or page source.
     async function loadSuggestion() {
-      const el = document.getElementById("suggestion");
+      const introEl = document.getElementById("intro");
+      const itemsEl = document.getElementById("items");
       try {
         const res = await fetch(WORKER_URL);
         const data = await res.json();
         if (data.error) {
-          el.textContent = "⚠ " + data.message;
-          el.classList.add("error");
+          introEl.textContent = "⚠ " + data.message;
+          introEl.classList.add("error");
+          itemsEl.innerHTML = "";
         } else {
-          el.textContent = data.suggestion;
-          el.classList.remove("error");
+          introEl.textContent = data.intro;
+          introEl.classList.remove("error");
+          renderItems(data.items || []);
         }
       } catch (err) {
         // The fetch itself failed — Worker unreachable, DNS, tablet Wi-Fi, etc.
-        el.textContent = "⚠ Can't reach CoreHeart — check the tablet's Wi-Fi connection.";
-        el.classList.add("error");
+        introEl.textContent = "⚠ Can't reach CoreHeart — check the tablet's Wi-Fi connection.";
+        introEl.classList.add("error");
+        itemsEl.innerHTML = "";
       }
     }
+
+    function renderItems(items) {
+      const container = document.getElementById("items");
+      container.innerHTML = "";
+      items.forEach((name) => {
+        const btn = document.createElement("button");
+        btn.className = "item-btn";
+        btn.textContent = name;
+        btn.onclick = () => {
+          // Placeholder: currently just a visual toggle, no backend call.
+          // Future step: POST to a new Worker route (e.g. /shopping-list)
+          // that writes into a `shopping_list` table — same auth/rate-limit
+          // pattern already in place, just a new route.
+          btn.classList.toggle("selected");
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    // Fake for now — tap-to-talk, not real speech recognition yet. Future
+    // step: wire this to the browser's SpeechRecognition API, send the
+    // transcript to a new Worker route, and have Claude parse it into
+    // {action, item} the same way we parse the intro/items JSON today.
+    const micBtn = document.getElementById("mic-btn");
+    let micTimeout;
+    micBtn.onclick = () => {
+      clearTimeout(micTimeout);
+      micBtn.textContent = "🎤 Listening…";
+      micBtn.classList.add("listening");
+      micTimeout = setTimeout(() => {
+        micBtn.textContent = "🎤 Say a command";
+        micBtn.classList.remove("listening");
+      }, 2000);
+    };
 
     function tickClock() {
       document.getElementById("clock").textContent = new Date().toLocaleString();
