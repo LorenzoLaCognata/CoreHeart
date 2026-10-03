@@ -23,6 +23,7 @@
   .card { text-align: center; padding: 2rem; max-width: 90%; }
   h1 { font-size: 2.2rem; font-weight: 600; margin-bottom: 0.75rem; }
   p { font-size: 1.4rem; opacity: 0.88; line-height: 1.5; }
+  p.error { color: #ff8a65; opacity: 1; }
   .clock { font-size: 1rem; opacity: 0.5; margin-top: 2.5rem; letter-spacing: 0.02em; }
 </style>
 </head>
@@ -34,20 +35,27 @@
   </div>
 
   <script>
-    // Replace with your deployed Worker URL after `wrangler deploy`.
     const WORKER_URL = "https://core-heart.llacognata.workers.dev";
 
     // No secret here on purpose — the tablet's Fully Kiosk app injects the
     // X-Hub-Secret header at the HTTP layer (Settings > Web Content > Inject
     // Custom Headers), so it never appears in this file or page source.
     async function loadSuggestion() {
+      const el = document.getElementById("suggestion");
       try {
         const res = await fetch(WORKER_URL);
         const data = await res.json();
-        document.getElementById("suggestion").textContent = data.suggestion;
+        if (data.error) {
+          el.textContent = "⚠ " + data.message;
+          el.classList.add("error");
+        } else {
+          el.textContent = data.suggestion;
+          el.classList.remove("error");
+        }
       } catch (err) {
-        document.getElementById("suggestion").textContent =
-          "CoreHeart is live. Suggestion engine not connected yet.";
+        // The fetch itself failed — Worker unreachable, DNS, tablet Wi-Fi, etc.
+        el.textContent = "⚠ Can't reach CoreHeart — check the tablet's Wi-Fi connection.";
+        el.classList.add("error");
       }
     }
 
