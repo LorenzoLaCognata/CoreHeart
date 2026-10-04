@@ -105,6 +105,50 @@
   .pill .dot { width: .9rem; height: .9rem; border-radius: 50%; flex: none; }
   .map { flex: 1; min-width: 0; border-radius: 1.2rem; overflow: hidden; border: 1px solid var(--line); background: #0f1117; }
   .map iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+
+  /* ---- v4 polish ---- */
+  .card h2 { align-items: center; font-size: 1.05rem; }
+  .hi { display: inline-grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: .85rem; font-size: 1.35rem; letter-spacing: 0; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .pic { flex: none; width: 6rem; height: 6rem; border-radius: 1.2rem; display: grid; place-items: center; font-size: 3.5rem; object-fit: cover;
+    background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--bg, var(--accent)) 70%, #fff), color-mix(in srgb, var(--bg, var(--accent)) 35%, #000)); box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+  .dish { display: flex; gap: 1.1rem; align-items: center; padding: 1rem; margin-bottom: .9rem; border-radius: 1.2rem; border: 1px solid var(--line); background: linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.01)); }
+  .dish h3 { margin: 0 0 .3rem; font-size: 1.4rem; font-weight: 500; } .dish p { margin: 0; color: var(--dim); font-size: 1rem; }
+  .shop { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 1rem; }
+  .si { text-align: center; padding: 1rem .6rem; border-radius: 1.2rem; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+  .si .pic { margin: 0 auto .6rem; width: 5rem; height: 5rem; font-size: 2.8rem; } .si b { display: block; font-size: 1.2rem; font-weight: 500; } .si span { color: var(--dim); font-size: .85rem; }
+  .det span { display: block; margin: .35rem 0; color: var(--dim); font-size: 1.05rem; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: .35rem; text-align: center; }
+  .dow { color: var(--dim); font-size: .8rem; padding-bottom: .3rem; }
+  .dy { position: relative; padding: .55rem 0; border-radius: .8rem; font-size: 1.15rem; }
+  .dy.today { background: var(--accent); color: #0b0c10; font-weight: 700; }
+  .dy i { position: absolute; left: 50%; bottom: .2rem; width: .35rem; height: .35rem; margin-left: -.175rem; border-radius: 50%; background: var(--accent); } .dy.today i { background: #0b0c10; }
+  .mon { font-size: 1.5rem; margin-bottom: .8rem; }
+  .ee { font-size: 2rem; flex: none; } .ew { color: var(--accent); font-size: .62em; font-weight: 600; margin-bottom: .1rem; }
+  .ev { font-size: clamp(1.1rem, 1.8vw, 1.4rem); padding: .8rem 1.1rem; margin-bottom: .65rem; }
+  .facts { margin-left: auto; display: grid; grid-template-columns: repeat(3, auto); gap: .7rem 1.6rem; }
+  .fact { text-align: center; } .fact span { font-size: 1.4rem; } .fact b { display: block; font-size: 1.15rem; font-weight: 500; } .fact i { font-style: normal; color: var(--dim); font-size: .75rem; }
+  .hrs { display: grid; grid-template-columns: repeat(6, 1fr); gap: .5rem; }
+  .hrs .day { padding: .6rem .2rem; } .hrs .day .e { font-size: 1.6rem; } .hrs .day b { font-size: 1.2rem; }
+  .wx-ico { font-size: clamp(4rem, 8vw, 6.5rem); } .wx-temp { font-size: clamp(3.5rem, 7vw, 5.5rem); }
+
+  /* ---- draft / mockup marking: amber dashes + ribbon wherever data is sample ---- */
+  .tag.draft { color: #ffb300; border: 1px dashed #ffb300; background: rgba(255,179,0,.12); font-weight: 600; }
+  .card:has(.tag.draft) { border: 2px dashed rgba(255,179,0,.55); }
+  .card:has(.tag.draft)::after { content: "✏️ DRAFT"; position: absolute; right: -3.4rem; bottom: 2.2rem; transform: rotate(-35deg); background: #ffb300; color: #201500;
+    font-weight: 800; letter-spacing: .12em; font-size: .8rem; padding: .3rem 3.6rem; pointer-events: none; opacity: .92; }
+  .addbar { margin-top: auto; padding-top: 1rem; display: flex; align-items: center; gap: 1rem; font-size: 1.1rem; color: var(--dim); }
+  .addbtn { padding: .8rem 1.4rem; border-radius: 999px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); font-size: 1.1rem; }
+  .addbtn.go { background: var(--accent); color: #0b0c10; font-weight: 700; }
+
+  /* ---- meals, heads-up, voice ---- */
+  .plan { display: grid; grid-template-columns: repeat(5, 1fr); gap: .7rem; }
+  .pd { border-radius: 1.1rem; padding: .7rem .5rem; text-align: center; min-height: 7.6rem; display: flex; flex-direction: column; align-items: center; gap: .3rem; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+  .pd .pl { color: var(--accent); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .pd b { font-size: 1rem; font-weight: 500; line-height: 1.2; } .pd .pe { color: var(--dim); font-size: 1.6rem; margin-top: .6rem; }
+  .pd .pic { width: 3.2rem; height: 3.2rem; font-size: 1.7rem; border-radius: .8rem; }
+  .pa { display: flex; gap: .4rem; } .pa button { background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: .6rem; padding: .25rem .7rem; font-size: 1rem; }
+  .chip.gap { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--text); }
+  #dailyBtn.on { border-color: #4caf7d; color: #4caf7d; background: rgba(76,175,125,.12); }
 </style>
 </head>
 <body>
@@ -113,6 +157,8 @@
     <div class="clock"><div class="time" id="time"></div><div class="date" id="date"></div><div class="milan" id="milan"></div></div>
     <nav class="nav" id="nav" aria-label="Sections"></nav>
     <button class="priv" id="priv" aria-pressed="false"><span id="privIcon">👁</span><span id="privText">Full view</span></button>
+    <button class="priv" data-act="speak" aria-label="Read this card aloud" title="Read this card aloud">🔊</button>
+    <button class="priv" id="dailyBtn" data-act="daily" aria-label="Daily spoken suggestions at 5 PM" title="Daily spoken suggestions at 5 PM">🔔</button>
   </header>
   <div class="bar" aria-hidden="true"><i id="prog"></i></div>
   <section class="stage" id="stage"></section>
@@ -124,78 +170,108 @@
      and drop its "Sample data" tag. */
   const DUMMY = {
     events: [
-      { when: "Today 6:30 PM", what: "Dinner with neighbors", where: "10 min walk" },
-      { when: "Tomorrow 10:00", what: "Farmers market", where: "Mill City" },
-      { when: "Tomorrow 7:00 PM", what: "Movie night", where: "Home" },
-      { when: "Sat 9:00 AM", what: "Trash & recycling out", where: "" },
+      { off: 0, time: "6:30 PM", what: "Dinner with neighbors", where: "10 min walk", e: "🍷" },
+      { off: 1, time: "10:00 AM", what: "Farmers market", where: "Mill City", e: "🥕" },
+      { off: 1, time: "7:00 PM", what: "Movie night", where: "Home", e: "🎬" },
+      { off: 4, time: "9:00 AM", what: "Trash & recycling out", where: "", e: "♻️" },
     ],
-    cook: [
-      { name: "Pasta al limone", why: "Uses the lemons and the ricotta that need finishing", time: "25 min", uses: ["limoni", "ricotta", "spaghetti"] },
-      { name: "Frittata di zucchine", why: "Eggs plus zucchini bought 5 days ago", time: "20 min", uses: ["uova", "zucchine", "parmigiano"] },
+    meals: {
+      recent: [{ name: "Risotto ai funghi", days_since: 1 }, { name: "Salmon, roasted potatoes", days_since: 2 }, { name: "Lasagna", days_since: 3 }, { name: "Tacos", days_since: 4 }],
+      gaps: [{ name: "Lasagna", days_since: 12 }, { name: "Frittata", days_since: 9 }, { name: "Pasta al limone", days_since: 8 }],
+      plan: [{ off: 0, name: "Frittata di zucchine" }, { off: 2, name: "Pasta al limone" }],
+    },
+    heads: [
+      { icon: "🩺", headline: "Dental cleaning: time to book", body: "In 12 days" }, { icon: "🛂", headline: "Passport expires", body: "In 4 months" },
+      { icon: "🥬", headline: "Zucchine needs eating", body: "Tomorrow" }, { icon: "🧾", headline: "Internet due", body: "In 5 days" },
     ],
-    ate: [
-      { day: "Yesterday", what: "Risotto ai funghi" }, { day: "Thursday", what: "Salmon, roasted potatoes" },
-      { day: "Wednesday", what: "Lasagna" }, { day: "Tuesday", what: "Tacos" }, { day: "Monday", what: "Minestrone" },
-    ],
-    useUp: [
-      { item: "Zucchine", note: "bought 5 days ago", warn: true }, { item: "Ricotta", note: "bought 6 days ago", warn: true },
-      { item: "Spinaci", note: "bought 3 days ago" }, { item: "Yogurt", note: "bought 4 days ago" },
-    ],
-    shopping: ["Latte", "Pane", "Pomodori", "Basilico", "Caffè", "Parmigiano"],
+    shopping: [["Latte", "🥛", "Dairy", "Milk"], ["Pane", "🍞", "Bakery", "Bread"], ["Pomodori", "🍅", "Produce", "Tomato"], ["Basilico", "🌿", "Produce", "Basil"], ["Caffè", "☕", "Pantry", "Coffee"], ["Parmigiano", "🧀", "Dairy", "Parmigiano-Reggiano"]],
     eatOut: [
-      { name: "Trattoria Sample", kind: "Italian · to try", dist: "7 min walk", open: "Open until 10 PM" },
-      { name: "Noodle Place Sample", kind: "Ramen · to try", dist: "4 min walk", open: "Open until 9 PM" },
+      { name: "Trattoria Sample", kind: "Italian", price: "$$", rating: "4.6", walk: "7 min walk", hours: "Open until 10 PM", addr: "123 Sample St", dish: "Cacio e pepe", why: "Cozy and quick before the movie", e: "🍝" },
+      { name: "Noodle Place Sample", kind: "Ramen", price: "$", rating: "4.4", walk: "4 min walk", hours: "Open until 9 PM", addr: "45 Example Ave", dish: "Spicy miso ramen", why: "Warm and fast on a cold evening", e: "🍜" },
     ],
     money: { day: "Day 3 of 31", elapsed: 10, cats: [["Groceries", 90, 600], ["Dining", 60, 250], ["Transport", 20, 200], ["Fun", 35, 150]],
              bills: [["Internet", "Oct 8", 65], ["Streaming", "Oct 12", 22], ["Phone", "Oct 15", 80]] },
-    safety: { hood: "Downtown West", total: 31, police: 18, fire: 9, crisis: 4, note: "About normal for this hour",
-              problems: [["Directed Patrol", 6], ["Traffic Stop", 4], ["Suspicious Person", 3], ["Welfare Check", 3], ["Parking Violation", 2], ["Alarm", 2]],
-              hours: [3, 2, 2, 1, 1, 2, 3, 4, 6, 7, 8, 9, 8, 7, 9, 10, 9, 8, 7, 6, 5, 4, 3, 3] },
+
   };
 
   // Paste the Tableau embed URL of the city's 911 dashboard here (see notes). Empty = built-in categories view.
-  const TABLEAU_URL = "https://tableau.minneapolismn.gov/views/911Dashboard/911Calls?%3Aembed=t&%3Atoolbar=f&%3Arefresh=true";
+  const TABLEAU_BASE = "https://tableau.minneapolismn.gov/views/911Dashboard/911Calls?Neighborhood=Downtown%20East%2CDowntown%20West%2CElliot%20Park%2CLoring%20Park%2CNicollet%20Island%20-%20East%20Bank%2CNorth%20Loop%2C%20&%3Aembed=t&%3Atoolbar=f&%3Arefresh=true";
+  // Attempts to make the map appear: force the desktop layout and pick the map view. Clear this string to test the plain link.
+  const TABLEAU_EXTRA = "&%3Adevice=desktop&Select%20Map%20View=Neighborhood";
+  const TABLEAU_URL = TABLEAU_BASE + TABLEAU_EXTRA;
 
   const DWELL = 30;                 // seconds each card stays before rotating
   let privacy = false, cur = 0, left = DWELL;
   const $ = (id) => document.getElementById(id);
   const money = (n) => privacy ? "•••" : "$" + n.toLocaleString();
   const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const tag = () => '<span class="tag">Sample data</span>';
+  const tag = () => '<span class="tag draft">✏️ DRAFT · sample</span>';
+  // Picture slot: pass an image URL later for real photos; until then a colored emoji tile.
+  const pic = (e, bg, img) => img ? `<img class="pic" src="${esc(img)}" alt="">` : `<div class="pic" style="--bg:${bg || "var(--accent)"}">${e}</div>`;
+  const CAT_BG = { Dairy: "#64b5f6", Bakery: "#ffb74d", Produce: "#9ccc65", Pantry: "#a1887f" };
+  const cuisineEmoji = (p) => { const k = (p.kind || "").toLowerCase();
+    return p.e || (/ital|pasta/.test(k) ? "🍝" : /ramen|noodle|japan/.test(k) ? "🍜" : /mex|taco/.test(k) ? "🌮" : /pizza/.test(k) ? "🍕" : /burger|americ/.test(k) ? "🍔" : /thai|india|curry/.test(k) ? "🍛" : /sushi/.test(k) ? "🍣" : "🍽️"); };
 
   const CARDS = [
-    { id: "events", icon: "📅", label: "Events", accent: "#64b5f6", render: () => `
-      <h2>Coming up ${tag()}</h2>
-      ${DUMMY.events.map(e => `<div class="ev"><span class="when">${e.when}</span>${e.what}<span class="m">${e.where}</span></div>`).join("")}` },
+    { id: "headsup", icon: "🔔", label: "Heads-up", accent: "#ffca28", render: () => { const live = HEADS.state === "ok";
+      return `<h2>Heads-up ${live ? '<span class="tag">Live</span>' : tag()}</h2>` + (HEADS.list.length
+        ? HEADS.list.slice(0, 5).map(c => `<div class="ev"><span class="ee">${esc(c.icon || "🔔")}</span><div><div class="ew">${esc(c.body || "")}</div>${esc(c.headline)}</div></div>`).join("")
+        : `<p class="big">Nothing needs your attention ✨</p>`); } },
 
-    { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => `
-      <h2>Kitchen ${tag()}</h2>
-      <div class="grid2" style="grid-template-columns:1.2fr 1fr">
-        <div><div class="sec">What to cook</div>${DUMMY.cook.map(r => `<div class="tile" style="margin-bottom:.9rem"><h3>${r.name}</h3><p>${r.why} · ${r.time}</p>
-          <div class="chips" style="margin-top:.5rem">${r.uses.map(u => `<span class="chip">${u}</span>`).join("")}</div></div>`).join("")}</div>
-        <div><div class="sec">Use it up</div>
-          <div class="chips" style="margin:.2rem 0 1.4rem">${DUMMY.useUp.map(i => `<span class="chip ${i.warn ? "warn" : ""}">${i.item} · ${i.note}</span>`).join("")}</div>
-          <div class="sec">We ate</div>
-          <div class="rows">${DUMMY.ate.slice(0, 4).map(a => `<div class="row" style="font-size:1.1rem;padding:.55rem 0"><span class="k" style="width:6.5rem">${a.day}</span>${a.what}</div>`).join("")}</div></div>
-      </div>` },
+    { id: "events", icon: "📅", label: "Calendar", accent: "#64b5f6", render: () => {
+      const now = new Date(), y = now.getFullYear(), mo = now.getMonth(), live = EV.state === "ok";
+      const lead = (new Date(y, mo, 1).getDay() + 6) % 7, dim = new Date(y, mo + 1, 0).getDate();
+      const days = new Set(EV.list.filter(e => e.date.getMonth() === mo && e.date.getFullYear() === y).map(e => e.date.getDate()));
+      let cells = ["M", "T", "W", "T", "F", "S", "S"].map(d => `<div class="dow">${d}</div>`).join("") + "<div></div>".repeat(lead);
+      for (let d = 1; d <= dim; d++) cells += `<div class="dy ${d === now.getDate() ? "today" : ""}">${d}${days.has(d) ? "<i></i>" : ""}</div>`;
+      const sod = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()), lbl = (d) => { const n = Math.round((sod(d) - sod(now)) / 864e5);
+        return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }); };
+      const bar = voiceBar(live ? '<button class="addbtn" data-act="add">🎤 Add event</button>' : "Connect Google Calendar to add events by voice.", "event");
+      return `<h2>Calendar ${live ? '<span class="tag">Live · Google Calendar</span>' : tag()}</h2>
+      <div style="display:grid;grid-template-columns:minmax(0,.9fr) 1.2fr;gap:2rem;flex:1;min-height:0">
+        <div><div class="mon">${now.toLocaleDateString([], { month: "long", year: "numeric" })}</div><div class="cal">${cells}</div></div>
+        <div>${EV.list.slice(0, 5).map(e => `<div class="ev"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span></div>`).join("") || '<p class="sub">Nothing coming up.</p>'}</div>
+      </div>
+      <div class="addbar">${bar}</div>`; } },
+
+    { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => {
+      const live = MEALS.state === "ok", days = [0, 1, 2, 3, 4].map(o => ymd(addDays(new Date(), o)));
+      const ago = (n) => n === 0 ? "Today" : n === 1 ? "Yesterday" : n + " days ago";
+      const tiles = days.map(d => { const p = MEALS.plan.find(x => x.planned_for === d);
+        return `<div class="pd"><span class="pl">${dayLabel(d)}</span>` + (p ? `${pic("🍽️", "#ffb74d", PHOTO[p.name])}<b>${esc(p.name)}</b><div class="pa"><button data-act="plan-done" data-id="${esc(p.id)}" data-name="${esc(p.name)}">✅</button><button data-act="plan-rm" data-id="${esc(p.id)}">✕</button></div>` : `<span class="pe">—</span>`) + "</div>"; }).join("");
+      const bar = PICK ? `Plan “${esc(PICK)}” for: ${days.map(d => `<button class="addbtn" data-act="plan-day" data-date="${d}">${dayLabel(d)}</button>`).join("")}<button class="addbtn" data-act="pick-x">Cancel</button>`
+        : voiceBar('<button class="addbtn" data-act="add-meal">🎤 Log or plan a meal</button> <span>“we ate lasagna” · “plan lasagna for Friday”</span>', "meal");
+      return `<h2>Kitchen ${live ? '<span class="tag">Live</span>' : tag()}</h2>
+      <div class="sec">Dinner plan</div><div class="plan">${tiles}</div>
+      <div class="grid2" style="margin-top:1.1rem;flex:1;min-height:0">
+        <div><div class="sec">Haven't had in a while · tap to plan</div><div class="chips" style="margin-top:.4rem">${MEALS.gaps.map(g => `<button class="chip gap" data-act="pick" data-name="${esc(g.name)}">${esc(g.name)} · ${g.days_since} days</button>`).join("") || '<span class="sub">Nothing stale. Nice variety!</span>'}</div></div>
+        <div><div class="sec">We ate</div>${MEALS.recent.slice(0, 4).map(m => `<div class="row" style="font-size:1.05rem;padding:.45rem 0"><span class="k" style="width:7rem">${ago(m.days_since)}</span>${esc(m.name)}</div>`).join("") || '<span class="sub">Nothing logged yet.</span>'}</div>
+      </div>
+      <div class="addbar">${bar}</div>`; } },
 
     { id: "shop", icon: "🛒", label: "Shopping", accent: "#4caf7d", render: () => `
-      <h2>Shopping list ${tag()}</h2>
-      <p class="big">${DUMMY.shopping.length} items to get</p>
-      <div class="chips">${DUMMY.shopping.map(i => `<span class="chip">${i}</span>`).join("")}</div>` },
+      <h2>Shopping list · ${DUMMY.shopping.length} items ${tag()}</h2>
+      <div class="shop">${DUMMY.shopping.map(i => `<div class="si">${pic(i[1], CAT_BG[i[2]], PHOTO[i[3]])}<b>${i[0]}</b><span>${i[2]}</span></div>`).join("")}</div>` },
 
     { id: "eatout", icon: "📍", label: "Eat out", accent: "#f06292", render: () => { const live = EAT.state === "ok"; return `
-      <h2>Where to eat tonight <span class="tag">${live ? "Live · Claude" : "Sample data"}</span></h2>
-      <div class="grid2">${EAT.places.map(p => `<div class="tile"><h3>${esc(p.name)}</h3><p>${esc(p.kind)}</p><p>${esc([p.walk, p.hours].filter(Boolean).join(" · "))}</p>${p.why ? `<p style="color:var(--text)">${esc(p.why)}</p>` : ""}</div>`).join("")}</div>`; } },
+      <h2>Where to eat tonight <span class="tag ${live ? "" : "draft"}">${live ? "Live · Claude" : "✏️ DRAFT · sample"}</span></h2>
+      <div class="grid2">${EAT.places.map(p => `<div class="tile">
+        <div style="display:flex;gap:1rem;align-items:center">${pic(cuisineEmoji(p), "#f06292", p.img)}<div><h3 style="margin:0">${esc(p.name)}</h3><p>${esc([p.kind, p.price].filter(Boolean).join(" · "))}${p.rating ? " · ⭐ " + esc(p.rating) : ""}</p></div></div>
+        <div class="det" style="margin-top:.9rem">${p.walk ? `<span>🚶 ${esc(p.walk)}</span>` : ""}${p.hours ? `<span>🕒 ${esc(p.hours)}</span>` : ""}${p.addr ? `<span>📍 ${esc(p.addr)}</span>` : ""}${p.dish ? `<span>🍴 Try: ${esc(p.dish)}</span>` : ""}</div>
+        ${p.why ? `<p style="color:var(--text);margin-top:.8rem">${esc(p.why)}</p>` : ""}</div>`).join("")}</div>
+      <div class="addbar">${eatBar()}</div>`; } },
 
     { id: "weather", icon: "☀️", label: "Weather", accent: "#4dd0e1", render: () => { const w = WX;
       if (w.state !== "ok") return `<h2>Weather</h2><p class="big">${w.state === "loading" ? "Loading weather…" : "Can't reach the weather service"}</p><p class="sub">${w.state === "loading" ? "" : "Will retry shortly."}</p>`;
+      const F = [["💧", "Humidity", w.hum], ["☔", "Rain today", w.rain], ["💨", "Wind", w.wind + " mph"], ["🕶", "UV max", w.uv], ["🌅", "Sunrise", w.sr], ["🌇", "Sunset", w.ss]];
       return `<h2>Weather · Downtown West <span class="tag">Live · Open-Meteo</span></h2>
       <div class="wx"><div class="wx-ico">${w.ico}</div>
-        <div><div class="wx-temp">${w.temp}°</div><p class="sub" style="margin:0">${w.desc} · feels like ${w.feels}°</p></div>
-        <div style="margin-left:auto;text-align:right"><p class="sub" style="margin:0">↑ ${w.hi}°  ↓ ${w.lo}°</p><p class="sub" style="margin:.3rem 0">💨 ${w.wind} mph</p>${w.air ? `<p class="sub" style="margin:0">🌿 AQI ${w.air.aqi} · ${esc(w.air.label)}</p>` : ""}</div></div>
-      <p class="sub" style="color:var(--text);margin:1.2rem 0">${w.tip}</p>
-      <div class="days">${w.days.map(d => `<div class="day"><span>${d.name}</span><div class="e">${d.ico}</div><b>${d.hi}°</b><span>${d.lo}°</span></div>`).join("")}</div>`; } },
+        <div><div class="wx-temp">${w.temp}°</div><p class="sub" style="margin:0">${w.desc} · feels ${w.feels}°</p><p class="sub" style="margin:.2rem 0 0">↑ ${w.hi}°  ↓ ${w.lo}°</p></div>
+        <div class="facts">${F.map(f => `<div class="fact"><span>${f[0]}</span><b>${f[2] ?? "–"}</b><i>${f[1]}</i></div>`).join("")}</div></div>
+      <p class="sub" style="color:var(--text);margin:1rem 0">${w.tip}${w.air ? ` · 🌿 Air ${w.air.aqi} (${esc(w.air.label)})` : ""}</p>
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:1rem;margin-top:auto">
+        <div class="hrs">${(w.hours || []).map(h => `<div class="day"><span>${h.t}</span><div class="e">${h.ico}</div><b>${h.temp}°</b></div>`).join("")}</div>
+        <div class="days" style="margin-top:0">${w.days.map(d => `<div class="day"><span>${d.name}</span><div class="e">${d.ico}</div><b>${d.hi}°</b><span>${d.lo}°</span></div>`).join("")}</div></div>`; } },
 
     { id: "money", icon: "💰", label: "Money", accent: "#81c784", render: () => { const m = DUMMY.money;
       const spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), pct = Math.round(spent / bud * 100);
@@ -209,19 +285,9 @@
           return `<div class="cat ${p >= 80 ? "hot" : ""}"><div class="l"><span>${c[0]}</span><span>${privacy ? p + "%" : money(c[1]) + " of " + money(c[2]) + " · " + p + "%"}</span></div><div class="bar"><i style="width:${Math.min(p, 100)}%"></i></div></div>`; }).join("")}
           <div class="chips">${m.bills.map(b => `<span class="chip">${b[0]} · ${b[1]} · ${money(b[2])}</span>`).join("")}</div></div></div>`; } },
 
-    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", render: () => { const s = DUMMY.safety;
-      const A = [["Police", s.police, "#42a5f5"], ["Fire", s.fire, "#ef5350"], ["Behavioral crisis", s.crisis, "#a1887f"]];   // the city's legend colors
-      return `<h2>911 · ${s.hood} · today <span class="tag">${TABLEAU_URL ? "Map live · counts sample" : "Sample data"}</span></h2>
-      <div style="display:flex;gap:1.6rem;flex:1;min-height:0">
-        <div style="flex:none;width:${TABLEAU_URL ? "34%" : "100%"};display:flex;flex-direction:column;min-height:0">
-          <p class="big">${s.total} calls</p><p class="sub" style="margin:.2rem 0 0">${s.note}</p>
-          <div class="agency">${A.map(a => `<i style="flex:${a[1]};background:${a[2]}"></i>`).join("")}</div>
-          <div class="foot" style="padding:0;display:flex;gap:1rem;flex-wrap:wrap;font-size:.9rem">${A.map(a => `<span><span style="color:${a[2]}">●</span> ${a[0]} ${a[1]}</span>`).join("")}</div>
-          <div class="sec" style="margin:1.3rem 0 .3rem">Top problems today</div>
-          ${s.problems.map(x => `<div class="cat" style="margin:.5rem 0"><div class="l" style="font-size:1.05rem;margin-bottom:.25rem"><span>${x[0]}</span><span>${x[1]}</span></div><div class="bar" style="height:.55rem"><i style="width:${Math.round(x[1] / s.problems[0][1] * 100)}%"></i></div></div>`).join("")}
-        </div>
-        ${TABLEAU_URL ? `<div class="map"><iframe src="${esc(TABLEAU_URL)}" loading="lazy" allowfullscreen></iframe></div>` : ""}
-      </div>`; } },
+    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", render: () => `
+      <h2>911 · Downtown &amp; North Loop · live <span class="tag">City of Minneapolis</span></h2>
+      <div class="map" style="flex:1"><iframe src="${esc(TABLEAU_URL)}" allowfullscreen></iframe></div>` },
   ];
 
   /* ===== Worker connection + Eat out (Claude picks, Worker caches 3 h) ===== */
@@ -230,16 +296,169 @@
   const qs = new URLSearchParams(location.search);
   if (qs.get("key")) { try { localStorage.setItem("hub_key", qs.get("key")); } catch (e) {} history.replaceState(null, "", location.pathname); }
   const hubKey = () => { try { return localStorage.getItem("hub_key") || ""; } catch (e) { return ""; } };
+  const api = (p, m = "GET", b) => fetch(WORKER_URL + p, { method: m, headers: { "content-type": "application/json", "X-Hub-Secret": hubKey() }, body: b ? JSON.stringify(b) : undefined })
+    .then(async (r) => { const j = await r.json(); if (!r.ok || j.error) throw new Error(j.message || r.status); return j; });
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const dayLabel = (s) => { const d = new Date(s + "T00:00"), n = Math.round((d - addDays(new Date(), 0)) / 864e5); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short" }); };
 
-  let EAT = { state: "sample", places: DUMMY.eatOut.map(p => ({ name: p.name, kind: p.kind, walk: p.dist, hours: p.open })) };
-  async function loadEatOut() {
+  let EAT = { state: "sample", places: DUMMY.eatOut };
+  let EATBUSY = false;
+  const EAT_KEY = "eat_cache", EAT_TTL_MS = 12 * 3600e3;     // picks are reused for 12 h; the button asks for new ones
+  const eatBar = () => EATBUSY ? "🔎 Finding new ideas… about 15 seconds"
+    : `<button class="addbtn" data-act="eat-new">🔄 New ideas</button>` + (EAT.at ? ` <span>updated ${new Date(EAT.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>` : "") + (EAT.note ? ` <span>· ${esc(EAT.note)}</span>` : "");
+  async function loadEatOut(fresh = false) {
+    if (EATBUSY) return;
+    if (!fresh) {
+      try { const c = JSON.parse(localStorage.getItem(EAT_KEY) || "null");
+        if (c && Date.now() - Date.parse(c.generated_at) < EAT_TTL_MS) { EAT = { state: "ok", places: c.places, at: c.generated_at }; refreshCard("eatout"); return; } } catch (e) {}
+    } else { EATBUSY = true; hold = true; refreshCard("eatout"); }
     try {
-      const r = await fetch(WORKER_URL + "/eat-out", { headers: { "X-Hub-Secret": hubKey() } });
+      const r = await fetch(WORKER_URL + "/eat-out" + (fresh ? "?fresh=1" : ""), { headers: { "X-Hub-Secret": hubKey() } });
       const j = await r.json();
       if (!r.ok || j.error || !Array.isArray(j.places) || !j.places.length) throw new Error(j.message || r.status);
-      EAT = { state: "ok", places: j.places.slice(0, 2) };
-    } catch (e) { console.warn("eat-out:", e.message || e); }   // keep sample / last good picks
-    const el = cards()[cur]; if (el && CARDS[cur].id === "eatout") el.innerHTML = CARDS[cur].render();
+      EAT = { state: "ok", places: j.places.slice(0, 2), at: j.generated_at, note: fresh && j.cached ? "already refreshed a few minutes ago" : "" };
+      try { localStorage.setItem(EAT_KEY, JSON.stringify({ places: EAT.places, generated_at: j.generated_at })); } catch (e) {}
+    } catch (e) { console.warn("eat-out:", e.message || e); if (fresh) EAT.note = "couldn't get new ideas"; }
+    EATBUSY = false; hold = ["listening", "confirm", "saving"].includes(ADD.phase); if (fresh) left = DWELL;
+    refreshCard("eatout");
+  }
+
+  /* ===== Google Calendar (via the Worker) + voice add ===== */
+  const evEmoji = (t) => { t = t.toLowerCase(); return /dinner|lunch|brunch|restaurant/.test(t) ? "🍽️" : /birthday/.test(t) ? "🎂" : /flight|airport/.test(t) ? "✈️" : /movie|film/.test(t) ? "🎬" : /call|zoom/.test(t) ? "📞" : /meeting|work/.test(t) ? "💼" : /trash|recycl/.test(t) ? "♻️" : /market/.test(t) ? "🥕" : "📌"; };
+  const tNow = new Date();
+  let EV = { state: "sample", list: DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e })) };
+  const ADD = { phase: "idle", text: "", msg: "", target: "event" };
+  let hold = false;                                   // pauses card rotation while you're adding an event
+  const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) el.innerHTML = CARDS[cur].render(); };
+  async function loadEvents() {
+    try {
+      const j = await (await fetch(WORKER_URL + "/events", { headers: { "X-Hub-Secret": hubKey() } })).json();
+      if (j.error || !Array.isArray(j.events)) throw new Error(j.message || "bad response");
+      EV = { state: "ok", list: j.events.map(x => { const d = x.allDay ? new Date(x.start + "T00:00") : new Date(x.start);
+        return { date: d, time: x.allDay ? "All day" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), what: x.title, where: x.location, e: evEmoji(x.title) }; }) };
+    } catch (e) { console.warn("calendar:", e.message || e); }   // keep sample / last good list
+    refreshCard("events");
+  }
+  function setAdd(o) { Object.assign(ADD, o); hold = ["listening", "confirm", "saving"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
+  function listen(target = "event") {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return setAdd({ phase: "error", msg: "Voice isn't supported in this browser.", target });
+    const r = new SR(); r.lang = "en-US"; r.interimResults = false;
+    r.onresult = (e) => setAdd({ phase: "confirm", text: e.results[0][0].transcript });
+    r.onerror = (e) => setAdd({ phase: "error", msg: "Mic error: " + e.error });
+    r.onend = () => { if (ADD.phase === "listening") setAdd({ phase: "idle" }); };
+    setAdd({ phase: "listening", target }); r.start();
+  }
+  async function saveEvent() {
+    setAdd({ phase: "saving" });
+    try {
+      const r = await fetch(WORKER_URL + "/events/quick", { method: "POST", headers: { "content-type": "application/json", "X-Hub-Secret": hubKey() }, body: JSON.stringify({ text: ADD.text }) });
+      const j = await r.json(); if (!r.ok || j.error) throw new Error(j.message || r.status);
+      setAdd({ phase: "done", msg: "Added: " + (j.title || ADD.text) }); loadEvents();
+      setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
+    } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
+  }
+  const needDb = () => { if (MEALS.state === "ok") return false; setAdd({ phase: "error", msg: "Connect the database first (see the setup notes).", target: "meal" }); return true; };
+  async function mealCall(path, body) { try { await api(path, "POST", body); } catch (err) { setAdd({ phase: "error", msg: String(err.message || err), target: "meal" }); } await loadMeals(); }
+  document.addEventListener("click", async (e) => {
+    ARMED = true;                                    // any tap lets the browser play spoken suggestions
+    const b = e.target.closest("[data-act]"); if (!b) return; const a = b.dataset.act, d = b.dataset;
+    if (a === "add") listen("event"); else if (a === "add-meal") listen("meal");
+    else if (a === "yes") { if (ADD.target === "meal") saveMeal(); else saveEvent(); }
+    else if (a === "no") setAdd({ phase: "idle", text: "" });
+    else if (a === "eat-new") loadEatOut(true);
+    else if (a === "pick") { PICK = d.name; refreshCard("kitchen"); }
+    else if (a === "pick-x") { PICK = null; refreshCard("kitchen"); }
+    else if (a === "plan-day") { const name = PICK; PICK = null; if (needDb()) return; await mealCall("/meal-plan", { date: d.date, name }); }
+    else if (a === "plan-done") { if (!needDb()) await mealCall("/meals", { name: d.name, plan_id: d.id }); }
+    else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
+    else if (a === "speak") speakCard();
+    else if (a === "daily") toggleDaily();
+  });
+
+  /* ===== meals: what we ate, how long ago, and the dinner plan ===== */
+  let MEALS = { state: "sample", recent: DUMMY.meals.recent, gaps: DUMMY.meals.gaps,
+    plan: DUMMY.meals.plan.map((p, i) => ({ id: "s" + i, planned_for: ymd(addDays(new Date(), p.off)), meal_type: "dinner", name: p.name })) };
+  let PICK = null;                                   // a suggestion waiting for you to choose a day
+  async function loadMeals() {
+    try { const j = await api("/meals"); MEALS = { state: "ok", recent: j.recent, gaps: j.gaps, plan: j.plan };
+      [...j.recent, ...j.gaps, ...j.plan].forEach(m => fetchPhoto(m.name)); }
+    catch (e) { console.warn("meals:", e.message || e); }
+    refreshCard("kitchen");
+  }
+  const WD = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  function parseMeal(t) {
+    t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    let m = t.match(/^(?:let'?s |we'?ll |we will )?(?:plan|have|cook|make)\s+(.+?)\s+(?:(?:for|on)\s+)?(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i);
+    if (m) { const w = m[2].toLowerCase(), now = new Date(), n = w === "today" || w === "tonight" ? 0 : w === "tomorrow" ? 1 : ((WD.indexOf(w) - now.getDay() + 7) % 7 || 7);
+      return { action: "plan", name: cap(m[1]), date: ymd(addDays(now, n)), when: w }; }
+    m = t.match(/^(?:we |i )?(?:ate|had|cooked|made)\s+(.+?)(?:\s+for\s+(breakfast|lunch|dinner))?$/i) || t.match(/^abbiamo\s+(?:mangiato|cucinato)\s+(.+)$/i);
+    if (m) { const h = new Date().getHours(); return { action: "eat", name: cap(m[1]), type: (m[2] || "").toLowerCase() || (h < 11 ? "breakfast" : h < 16 ? "lunch" : "dinner") }; }
+    return null;
+  }
+  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : `Log “${m.name}” as ${m.type}`;
+  async function saveMeal() {
+    const m = parseMeal(ADD.text);
+    if (!m) return setAdd({ phase: "error", msg: "Try “we ate lasagna” or “plan lasagna for Friday”." });
+    if (MEALS.state !== "ok") return setAdd({ phase: "error", msg: "Connect the database first (see the setup notes)." });
+    setAdd({ phase: "saving" });
+    try {
+      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else await api("/meals", "POST", { name: m.name, meal_type: m.type });
+      setAdd({ phase: "done", msg: mealSummary(m) }); loadMeals();
+      setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
+    } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
+  }
+  // One status bar for both voice flows (calendar events and meals).
+  const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
+    : ADD.phase === "listening" ? (target === "meal" ? "🎙 Listening… “we ate lasagna” or “plan lasagna for Friday”" : "🎙 Listening… try “Dinner with Anna Friday at 7pm”")
+    : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="no">Cancel</button>`
+    : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="no">OK</button>';
+
+  /* ===== heads-up cards (from the database via the Worker) ===== */
+  let HEADS = { state: "sample", list: DUMMY.heads };
+  async function loadHeads() {
+    try { HEADS = { state: "ok", list: (await api("/cards")).cards }; } catch (e) { console.warn("cards:", e.message || e); }
+    refreshCard("headsup");
+  }
+
+  /* ===== spoken suggestions (the browser's built-in text-to-speech: free, voice depends on the tablet) ===== */
+  let ARMED = false, DAILY = false, spokenDay = ""; try { DAILY = localStorage.getItem("daily_voice") === "1"; spokenDay = localStorage.getItem("spoken_day") || ""; } catch (e) {}
+  const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+  function speak(text) {
+    if (!text || !("speechSynthesis" in window)) return false;
+    speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; speechSynthesis.speak(u); return true;
+  }
+  function sayFor(id) {
+    if (id === "kitchen") { const p = MEALS.plan.find(x => x.planned_for === ymd(new Date())), g = MEALS.gaps.slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`);
+      return (p ? `Tonight's plan is ${p.name}. ` : "Nothing is planned for tonight. ") + (g.length ? `You haven't had ${g.join(", or ")}. Want to plan one?` : ""); }
+    if (id === "headsup") return HEADS.list.length ? "Heads up. " + HEADS.list.slice(0, 3).map(c => `${c.headline}. ${c.body || ""}`).join(" ") : "Nothing needs your attention.";
+    if (id === "events") { const e = EV.list[0]; return e ? `Next up: ${e.what}, ${e.time}.` : "No upcoming events."; }
+    if (id === "weather") return WX.state === "ok" ? `It's ${WX.temp} degrees and ${WX.desc.toLowerCase()}. ${WX.tip}` : "";
+    return "";
+  }
+  const speakCard = () => speak(sayFor(CARDS[cur].id) || "There is nothing to read on this card.");
+  function toggleDaily() {
+    DAILY = !DAILY; try { localStorage.setItem("daily_voice", DAILY ? "1" : "0"); } catch (e) {}
+    $("dailyBtn").classList.toggle("on", DAILY); if (DAILY) speak("Daily suggestions are on. I'll read them at five p.m.");
+  }
+  function dailyVoice(d) {   // once a day at 5 PM, if switched on and the page has been tapped since it loaded
+    if (!DAILY || !ARMED || d.getHours() !== 17 || spokenDay === ymd(d)) return;
+    spokenDay = ymd(d); try { localStorage.setItem("spoken_day", spokenDay); } catch (e) {}
+    speak(sayFor("kitchen") + " " + sayFor("headsup"));
+  }
+
+  /* ===== real photos (Wikipedia thumbnails, cached on the tablet; emoji tile is the fallback) ===== */
+  let PHOTO = {}; try { PHOTO = JSON.parse(localStorage.getItem("photos") || "{}"); } catch (e) {}
+  async function fetchPhoto(q) {
+    if (!q || q in PHOTO) return;
+    try {
+      const j = await (await fetch("https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrlimit=1&prop=pageimages&piprop=thumbnail&pithumbsize=320&format=json&origin=*&gsrsearch=" + encodeURIComponent(q))).json();
+      PHOTO[q] = Object.values(j.query?.pages || {})[0]?.thumbnail?.source || "";
+      try { localStorage.setItem("photos", JSON.stringify(PHOTO)); } catch (e) {}
+      refreshCard("kitchen"); refreshCard("shop");
+    } catch (e) { /* offline: emoji tiles stay */ }
   }
 
   /* ===== live weather (Open-Meteo: free, no API key) ===== */
@@ -250,8 +469,8 @@
   async function loadWeather() {
     try {
       const url = "https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON +
-        "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&hourly=precipitation_probability" +
-        "&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph" +
+        "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m&hourly=precipitation_probability,temperature_2m,weather_code" +
+        "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max&temperature_unit=fahrenheit&wind_speed_unit=mph" +
         "&timezone=America%2FChicago&forecast_days=5";
       const j = await (await fetch(url)).json();
       if (!j.current) throw new Error("bad response");
@@ -264,6 +483,14 @@
         hi: Math.round(j.daily.temperature_2m_max[0]), lo: Math.round(j.daily.temperature_2m_min[0]), tip,
         days: j.daily.time.slice(1).map((t, k) => ({ name: new Date(t + "T12:00").toLocaleDateString([], { weekday: "short" }),
           hi: Math.round(j.daily.temperature_2m_max[k + 1]), lo: Math.round(j.daily.temperature_2m_min[k + 1]), ico: WMO(j.daily.weather_code[k + 1])[1] })) };
+      try {   // extra details; the card still works if any of these are missing
+        const t12 = (t) => { const h = +t.slice(11, 13); return ((h % 12) || 12) + ":" + t.slice(14, 16) + (h < 12 ? " AM" : " PM"); };
+        const h0 = j.hourly.time.findIndex(t => t.slice(0, 13) === hr);
+        Object.assign(WX, { hum: Math.round(c.relative_humidity_2m) + "%", rain: Math.round(j.daily.precipitation_probability_max[0]) + "%", uv: Math.round(j.daily.uv_index_max[0]),
+          sr: t12(j.daily.sunrise[0]), ss: t12(j.daily.sunset[0]),
+          hours: [1, 3, 5, 7, 9, 11].filter(k => h0 >= 0 && j.hourly.time[h0 + k]).map(k => { const h = +j.hourly.time[h0 + k].slice(11, 13);
+            return { t: ((h % 12) || 12) + (h < 12 ? "a" : "p"), temp: Math.round(j.hourly.temperature_2m[h0 + k]), ico: WMO(j.hourly.weather_code[h0 + k])[1] }; }) });
+      } catch (e) { console.warn("weather extras:", e.message || e); }
     } catch (e) { if (WX.state !== "ok") WX = { state: "error" }; }   // keep the last good reading on a hiccup
     if (WX.state === "ok") {
       try {
@@ -277,10 +504,11 @@
   }
 
   /* ===== group + order the sections (tab order = rotation order) ===== */
-  const GROUP = { events: "Today", weather: "Today", safety: "Today",
+  const GROUP = { headsup: "Today", events: "Today", weather: "Today", safety: "Today",
                   kitchen: "Food", eatout: "Food", shop: "Food", money: "Money" };
   const ORDER = Object.keys(GROUP);
   CARDS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
+  CARDS.forEach(c => { const r = c.render; c.render = () => r().replace("<h2>", `<h2><span class="hi">${c.icon}</span>`); });
 
   /* ===== build UI ===== */
   CARDS.forEach((c, i) => {
@@ -296,6 +524,8 @@
   const tabs = () => [...document.querySelectorAll(".tab")], cards = () => [...document.querySelectorAll(".card")];
 
   function go(i) {
+    if (ADD.phase === "listening" || ADD.phase === "confirm") ADD.phase = "idle";
+    if (ADD.phase !== "saving") hold = false;
     cur = (i + CARDS.length) % CARDS.length; left = DWELL;
     cards().forEach((el, k) => { if (k === cur) el.innerHTML = CARDS[k].render(); el.classList.toggle("show", k === cur); });
     tabs().forEach((t, k) => t.classList.toggle("on", k === cur));
@@ -317,12 +547,17 @@
     const rome = (o) => d.toLocaleString("en-US", { timeZone: "Europe/Rome", ...o });
     const rh = Number(rome({ hour: "numeric", hour12: false })) % 24;
     $("milan").innerHTML = `<span class="mdot ${rh >= 8 && rh < 22 ? "ok" : ""}"></span>Milan ${rome({ hour: "numeric", minute: "2-digit" })}`;
-    left -= 1; $("prog").style.width = ((DWELL - left) / DWELL * 100) + "%";
+    dailyVoice(d); if (!hold) left -= 1; $("prog").style.width = ((DWELL - left) / DWELL * 100) + "%";
     if (left <= 0) go(cur + 1);
   }
+  $("dailyBtn").classList.toggle("on", DAILY);
   go(0); tick(); setInterval(tick, 1000);
   loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
-  loadEatOut(); setInterval(loadEatOut, 3 * 60 * 60 * 1000);
+  loadEatOut(); setInterval(() => loadEatOut(), 6 * 60 * 60 * 1000);   // reuses the saved picks unless they're 12 h old
+  loadEvents(); setInterval(loadEvents, 5 * 60 * 1000);
+  DUMMY.shopping.forEach(i => fetchPhoto(i[3]));
+  loadMeals(); setInterval(loadMeals, 10 * 60 * 1000);
+  loadHeads(); setInterval(loadHeads, 15 * 60 * 1000);
 </script>
 </body>
 </html>
