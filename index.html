@@ -75,6 +75,36 @@
     .grid2 { grid-template-columns: 1fr; } .card { padding: 1.4rem; } .row .k { width: 6rem; }
   }
   @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+
+  /* ---- visual polish ---- */
+  body { background: radial-gradient(90% 60% at 85% -10%, color-mix(in srgb, var(--accent) 16%, #0b0c10), #0b0c10 70%); transition: background .8s; }
+  .card { box-shadow: 0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.07); }
+  .tab.on { box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 40%, transparent); }
+  .tile { border-left: 4px solid var(--accent); background: linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.01)); }
+  .chip { background: rgba(255,255,255,.07); }
+  .cat .bar { height: .8rem; }
+  .cat .bar i { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 45%, #000), var(--accent)); border-radius: 999px; }
+  .cat.hot .bar i { background: linear-gradient(90deg, #ff7043, #ffab91); }
+  .ev { display: flex; align-items: center; gap: 1.2rem; padding: 1rem 1.3rem; margin-bottom: .8rem; border-radius: 1.2rem; border-left: 4px solid var(--accent);
+    background: linear-gradient(90deg, rgba(255,255,255,.07), rgba(255,255,255,.015)); font-size: clamp(1.2rem, 2.2vw, 1.7rem); }
+  .ev .when { flex: none; min-width: 10rem; padding: .35rem .9rem; border-radius: 999px; text-align: center; font-size: .72em; font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+  .ev .m { margin-left: auto; color: var(--dim); font-size: .7em; }
+  .wx { display: flex; align-items: center; gap: 2rem; }
+  .wx-ico { font-size: clamp(5rem, 11vw, 8.5rem); line-height: 1; filter: drop-shadow(0 10px 28px color-mix(in srgb, var(--accent) 50%, transparent)); }
+  .wx-temp { font-size: clamp(4rem, 9vw, 7rem); font-weight: 200; line-height: 1; letter-spacing: -.04em; }
+  .days { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9rem; margin-top: auto; }
+  .day { border-radius: 1.2rem; padding: .9rem; text-align: center; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+  .day .e { font-size: 2.1rem; } .day b { display: block; font-size: 1.6rem; font-weight: 500; } .day span { color: var(--dim); font-size: .9rem; }
+  .donut { position: relative; width: 13rem; height: 13rem; margin: 0 auto; }
+  .donut .c { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; line-height: 1.2; }
+  .agency { display: flex; gap: 3px; height: 1.1rem; margin: 1.1rem 0; border-radius: 999px; overflow: hidden; }
+  .agency i { display: block; height: 100%; }
+  .pill { display: flex; align-items: center; gap: .8rem; padding: .8rem 1.2rem; border-radius: 1.1rem; background: rgba(255,255,255,.06); border: 1px solid var(--line); }
+  .pill b { font-size: 2.2rem; font-weight: 300; font-variant-numeric: tabular-nums; } .pill span:last-child { color: var(--dim); }
+  .pill .dot { width: .9rem; height: .9rem; border-radius: 50%; flex: none; }
+  .map { flex: 1; min-width: 0; border-radius: 1.2rem; overflow: hidden; border: 1px solid var(--line); background: #0f1117; }
+  .map iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 </style>
 </head>
 <body>
@@ -119,8 +149,12 @@
     money: { day: "Day 3 of 31", elapsed: 10, cats: [["Groceries", 90, 600], ["Dining", 60, 250], ["Transport", 20, 200], ["Fun", 35, 150]],
              bills: [["Internet", "Oct 8", 65], ["Streaming", "Oct 12", 22], ["Phone", "Oct 15", 80]] },
     safety: { hood: "Downtown West", total: 31, police: 18, fire: 9, crisis: 4, note: "About normal for this hour",
+              problems: [["Directed Patrol", 6], ["Traffic Stop", 4], ["Suspicious Person", 3], ["Welfare Check", 3], ["Parking Violation", 2], ["Alarm", 2]],
               hours: [3, 2, 2, 1, 1, 2, 3, 4, 6, 7, 8, 9, 8, 7, 9, 10, 9, 8, 7, 6, 5, 4, 3, 3] },
   };
+
+  // Paste the Tableau embed URL of the city's 911 dashboard here (see notes). Empty = built-in categories view.
+  const TABLEAU_URL = "https://tableau.minneapolismn.gov/views/911Dashboard/911Calls?%3Aembed=t&%3Atoolbar=f&%3Arefresh=true";
 
   const DWELL = 30;                 // seconds each card stays before rotating
   let privacy = false, cur = 0, left = DWELL;
@@ -132,7 +166,7 @@
   const CARDS = [
     { id: "events", icon: "📅", label: "Events", accent: "#64b5f6", render: () => `
       <h2>Coming up ${tag()}</h2>
-      <div class="rows">${DUMMY.events.map(e => `<div class="row"><span class="k">${e.when}</span>${e.what}<span class="m">${e.where}</span></div>`).join("")}</div>` },
+      ${DUMMY.events.map(e => `<div class="ev"><span class="when">${e.when}</span>${e.what}<span class="m">${e.where}</span></div>`).join("")}` },
 
     { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => `
       <h2>Kitchen ${tag()}</h2>
@@ -157,26 +191,37 @@
     { id: "weather", icon: "☀️", label: "Weather", accent: "#4dd0e1", render: () => { const w = WX;
       if (w.state !== "ok") return `<h2>Weather</h2><p class="big">${w.state === "loading" ? "Loading weather…" : "Can't reach the weather service"}</p><p class="sub">${w.state === "loading" ? "" : "Will retry shortly."}</p>`;
       return `<h2>Weather · Downtown West <span class="tag">Live · Open-Meteo</span></h2>
-      <p class="big">${w.ico} ${w.temp}°F · ${w.desc}</p>
-      <p class="sub">Feels like ${w.feels}° · High ${w.hi}° · Low ${w.lo}° · Wind ${w.wind} mph</p>
-      <p class="sub" style="color:var(--text)">${w.tip}</p>
-      ${w.air ? `<p class="sub">Air quality ${w.air.aqi} · ${w.air.label} · PM2.5 ${w.air.pm}</p>` : ""}
-      <div class="stats">${w.days.map(d => `<div class="stat"><b>${d.hi}°</b><span>${d.name} ${d.ico} · low ${d.lo}°</span></div>`).join("")}</div>`; } },
+      <div class="wx"><div class="wx-ico">${w.ico}</div>
+        <div><div class="wx-temp">${w.temp}°</div><p class="sub" style="margin:0">${w.desc} · feels like ${w.feels}°</p></div>
+        <div style="margin-left:auto;text-align:right"><p class="sub" style="margin:0">↑ ${w.hi}°  ↓ ${w.lo}°</p><p class="sub" style="margin:.3rem 0">💨 ${w.wind} mph</p>${w.air ? `<p class="sub" style="margin:0">🌿 AQI ${w.air.aqi} · ${esc(w.air.label)}</p>` : ""}</div></div>
+      <p class="sub" style="color:var(--text);margin:1.2rem 0">${w.tip}</p>
+      <div class="days">${w.days.map(d => `<div class="day"><span>${d.name}</span><div class="e">${d.ico}</div><b>${d.hi}°</b><span>${d.lo}°</span></div>`).join("")}</div>`; } },
 
     { id: "money", icon: "💰", label: "Money", accent: "#81c784", render: () => { const m = DUMMY.money;
       const spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), pct = Math.round(spent / bud * 100);
+      const R = 56, C = 2 * Math.PI * R, off = C * (1 - Math.min(pct, 100) / 100);
       return `<h2>Spending this month ${tag()}</h2>
-      <div class="grid2"><div>${m.cats.map(c => { const p = Math.round(c[1] / c[2] * 100);
-        return `<div class="cat ${p >= 80 ? "hot" : ""}"><div class="l"><span>${c[0]}</span><span>${privacy ? p + "%" : money(c[1]) + " of " + money(c[2]) + " · " + p + "%"}</span></div><div class="bar"><i style="width:${Math.min(p, 100)}%"></i></div></div>`; }).join("")}</div>
-      <div><p class="big">${pct}% of budget used</p><p class="sub">${m.day} · ${m.elapsed}% of the month gone${pct > m.elapsed + 5 ? " — a bit ahead of pace" : ""}</p>
-        <div class="rows" style="margin-top:1.4rem">${m.bills.map(b => `<div class="row" style="font-size:1.15rem"><span class="k" style="width:6rem">${b[1]}</span>${b[0]}<span class="m">${money(b[2])}</span></div>`).join("")}</div></div></div>`; } },
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:2.6rem;align-items:center;flex:1">
+        <div><div class="donut"><svg viewBox="0 0 140 140" width="100%" height="100%" style="transform:rotate(-90deg)"><circle cx="70" cy="70" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14"/><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"/></svg>
+          <div class="c"><div><b style="font-size:2.8rem;font-weight:300">${pct}%</b><br><span style="color:var(--dim)">of budget</span></div></div></div>
+          <p class="sub" style="text-align:center">${m.day} · ${m.elapsed}% of the month gone${pct > m.elapsed + 5 ? "<br>a bit ahead of pace" : ""}</p></div>
+        <div>${m.cats.map(c => { const p = Math.round(c[1] / c[2] * 100);
+          return `<div class="cat ${p >= 80 ? "hot" : ""}"><div class="l"><span>${c[0]}</span><span>${privacy ? p + "%" : money(c[1]) + " of " + money(c[2]) + " · " + p + "%"}</span></div><div class="bar"><i style="width:${Math.min(p, 100)}%"></i></div></div>`; }).join("")}
+          <div class="chips">${m.bills.map(b => `<span class="chip">${b[0]} · ${b[1]} · ${money(b[2])}</span>`).join("")}</div></div></div>`; } },
 
-    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", render: () => { const s = DUMMY.safety, mx = Math.max(...s.hours), nowH = new Date().getHours(); return `
-      <h2>911 · ${s.hood} · last 12 hours ${tag()}</h2>
-      <p class="big">${s.total} calls — ${s.note.toLowerCase()}</p>
-      <div class="stats"><div class="stat"><b>${s.police}</b><span>Police</span></div><div class="stat"><b>${s.fire}</b><span>Fire</span></div><div class="stat"><b>${s.crisis}</b><span>Behavioral crisis</span></div></div>
-      <div class="hours">${s.hours.map((h, i) => `<i class="${i === nowH ? "now" : ""}" style="height:${Math.round(h / mx * 100)}%"></i>`).join("")}</div>
-      <div class="foot">Typical calls by hour of day · outlined bar is now</div>`; } },
+    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", render: () => { const s = DUMMY.safety;
+      const A = [["Police", s.police, "#42a5f5"], ["Fire", s.fire, "#ef5350"], ["Behavioral crisis", s.crisis, "#a1887f"]];   // the city's legend colors
+      return `<h2>911 · ${s.hood} · today <span class="tag">${TABLEAU_URL ? "Map live · counts sample" : "Sample data"}</span></h2>
+      <div style="display:flex;gap:1.6rem;flex:1;min-height:0">
+        <div style="flex:none;width:${TABLEAU_URL ? "34%" : "100%"};display:flex;flex-direction:column;min-height:0">
+          <p class="big">${s.total} calls</p><p class="sub" style="margin:.2rem 0 0">${s.note}</p>
+          <div class="agency">${A.map(a => `<i style="flex:${a[1]};background:${a[2]}"></i>`).join("")}</div>
+          <div class="foot" style="padding:0;display:flex;gap:1rem;flex-wrap:wrap;font-size:.9rem">${A.map(a => `<span><span style="color:${a[2]}">●</span> ${a[0]} ${a[1]}</span>`).join("")}</div>
+          <div class="sec" style="margin:1.3rem 0 .3rem">Top problems today</div>
+          ${s.problems.map(x => `<div class="cat" style="margin:.5rem 0"><div class="l" style="font-size:1.05rem;margin-bottom:.25rem"><span>${x[0]}</span><span>${x[1]}</span></div><div class="bar" style="height:.55rem"><i style="width:${Math.round(x[1] / s.problems[0][1] * 100)}%"></i></div></div>`).join("")}
+        </div>
+        ${TABLEAU_URL ? `<div class="map"><iframe src="${esc(TABLEAU_URL)}" loading="lazy" allowfullscreen></iframe></div>` : ""}
+      </div>`; } },
   ];
 
   /* ===== Worker connection + Eat out (Claude picks, Worker caches 3 h) ===== */
