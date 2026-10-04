@@ -5,153 +5,279 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>CoreHeart</title>
 <style>
-  :root { color-scheme: dark; }
-  html, body {
-    height: 100%;
-    margin: 0;
-    background: #0b0c10;
-    color: #f5f5f0;
-    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .card { text-align: center; padding: 2rem; max-width: 90%; }
-  h1 { font-size: 2.2rem; font-weight: 600; margin-bottom: 0.75rem; }
-  p { font-size: 1.4rem; opacity: 0.88; line-height: 1.5; }
-  p.error { color: #ff8a65; opacity: 1; }
+  :root { color-scheme: dark; --bg:#0b0c10; --panel:#14161d; --line:rgba(245,245,240,.10); --text:#f5f5f0; --dim:rgba(245,245,240,.55); --accent:#4caf7d; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; user-select: none; }
+  body { padding: env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px); overflow: hidden; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .app { height: 100%; display: grid; grid-template-rows: auto 3px 1fr; gap: .6rem; padding: 1rem 1.4rem 1.2rem; }
 
-  .items {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    justify-content: center;
-    margin-top: 1.75rem;
-  }
-  .item-btn {
-    font: inherit;
-    font-size: 1.15rem;
-    padding: 0.9rem 1.4rem;        /* generous touch target for a tablet */
-    border-radius: 999px;
-    border: 1px solid rgba(245, 245, 240, 0.3);
-    background: rgba(245, 245, 240, 0.08);
-    color: #f5f5f0;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, transform 0.1s;
-  }
-  .item-btn:active { transform: scale(0.96); }
-  .item-btn.selected {
-    background: #4caf7d;
-    border-color: #4caf7d;
-    color: #0b0c10;
-  }
+  /* top bar */
+  .top { display: flex; align-items: center; gap: 1rem; }
+  .clock { flex: none; }
+  .clock .time { font-size: 2.2rem; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; }
+  .clock .date { font-size: .8rem; color: var(--dim); margin-top: .2rem; }
+  .nav { flex: 1; display: flex; gap: .5rem; justify-content: center; overflow-x: auto; scrollbar-width: none; }
+  .grp { flex: none; display: flex; flex-direction: column; align-items: center; gap: .1rem; padding: .3rem .4rem .15rem; border-radius: 1.2rem; border: 1px solid var(--line); }
+  .gl { font-size: .58rem; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  .gi { display: flex; gap: .1rem; }
+  .nav::-webkit-scrollbar { display: none; }
+  .tab { flex: none; width: 3.7rem; padding: .5rem 0 .4rem; border-radius: 1rem; border: 1px solid transparent; background: none; display: flex; flex-direction: column; align-items: center; gap: .15rem; opacity: .6; transition: opacity .15s, background .15s; }
+  .tab span:first-child { font-size: 1.55rem; line-height: 1; }
+  .tab span:last-child { font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; }
+  .tab.on { opacity: 1; background: rgba(245,245,240,.08); border-color: var(--accent); }
+  .tab:active { transform: scale(.94); }
+  .priv { flex: none; display: flex; align-items: center; gap: .5rem; padding: .7rem 1rem; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-size: .9rem; }
+  .priv.on { border-color: #ffb74d; color: #ffb74d; background: rgba(255,183,77,.1); }
+  .bar { background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
 
-  .mic-btn {
-    margin-top: 1.75rem;
-    font: inherit;
-    font-size: 1.1rem;
-    padding: 0.9rem 1.6rem;
-    border-radius: 999px;
-    border: 1px solid rgba(100, 181, 246, 0.5);
-    background: rgba(100, 181, 246, 0.12);
-    color: #90caf9;
-    cursor: pointer;
-    transition: background 0.15s, transform 0.1s;
-  }
-  .mic-btn:active { transform: scale(0.96); }
-  .mic-btn.listening {
-    background: rgba(100, 181, 246, 0.3);
-    animation: pulse 1s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.55; }
-  }
+  /* stage */
+  .stage { position: relative; min-height: 0; }
+  .card { position: absolute; inset: 0; border-radius: 1.75rem; border: 1px solid var(--line); padding: 2rem 2.4rem; display: flex; flex-direction: column; overflow: hidden;
+    background: radial-gradient(110% 80% at 0% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%), var(--panel);
+    opacity: 0; transform: translateY(10px); pointer-events: none; transition: opacity .45s, transform .45s; }
+  .card.show { opacity: 1; transform: none; pointer-events: auto; }
+  .card h2 { margin: 0 0 1.4rem; display: flex; align-items: baseline; gap: .9rem; font-size: .95rem; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .tag { margin-left: auto; font-size: .7rem; letter-spacing: .08em; color: var(--dim); border: 1px dashed var(--line); padding: .15rem .55rem; border-radius: 999px; }
+  .big { font-size: clamp(2rem, 4.4vw, 3.6rem); font-weight: 300; line-height: 1.15; margin: 0; letter-spacing: -.01em; }
+  .sub { font-size: 1.3rem; color: var(--dim); margin: .6rem 0 0; line-height: 1.4; }
+  .rows { display: grid; gap: .2rem; margin-top: .4rem; }
+  .row { display: flex; align-items: baseline; gap: 1.2rem; padding: .85rem 0; border-bottom: 1px solid var(--line); font-size: clamp(1.2rem, 2.2vw, 1.7rem); }
+  .row .k { flex: none; width: 9rem; color: var(--accent); font-variant-numeric: tabular-nums; font-size: .85em; }
+  .row .m { margin-left: auto; color: var(--dim); font-size: .75em; text-align: right; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; flex: 1; min-height: 0; }
+  .tile { border: 1px solid var(--line); border-radius: 1.2rem; padding: 1.4rem; background: rgba(0,0,0,.18); }
+  .tile h3 { margin: 0 0 .5rem; font-size: 1.6rem; font-weight: 500; }
+  .tile p { margin: .3rem 0; color: var(--dim); font-size: 1.1rem; line-height: 1.4; }
+  .chips { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+  .chip { padding: .55rem 1.1rem; border-radius: 999px; border: 1px solid var(--line); background: rgba(245,245,240,.06); font-size: 1.05rem; }
+  .chip.warn { border-color: #ff8a65; color: #ff8a65; }
+  .stats { display: flex; gap: 2.4rem; margin-top: 1.4rem; flex-wrap: wrap; }
+  .stat b { display: block; font-size: 2.8rem; font-weight: 300; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--dim); font-size: .95rem; }
+  .cat { margin: .75rem 0; }
+  .cat .l { display: flex; justify-content: space-between; font-size: 1.25rem; margin-bottom: .4rem; }
+  .cat .l span:last-child { color: var(--dim); }
+  .cat .bar { height: .7rem; }
+  .cat.hot .bar i { background: #ff8a65; }
+  .hours { display: flex; align-items: flex-end; gap: 4px; height: 6rem; margin-top: 1.4rem; }
+  .hours i { flex: 1; background: var(--accent); opacity: .75; border-radius: 3px 3px 0 0; }
+  .hours i.now { opacity: 1; outline: 2px solid var(--text); }
+  .sec { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin-bottom: .6rem; }
+  .clock .milan { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--dim); margin-top: .15rem; }
+  .mdot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--dim); }
+  .mdot.ok { background: #4caf7d; }
+  .foot { margin-top: auto; padding-top: 1rem; color: var(--dim); font-size: .95rem; }
 
-  .clock { font-size: 1rem; opacity: 0.5; margin-top: 2.5rem; letter-spacing: 0.02em; }
+  @media (max-width: 860px), (orientation: portrait) {
+    .top { flex-wrap: wrap; } .nav { order: 3; flex-basis: 100%; justify-content: flex-start; }
+    .grid2 { grid-template-columns: 1fr; } .card { padding: 1.4rem; } .row .k { width: 6rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Hello, Lorenzo & Giulia</h1>
-    <p id="intro">Loading today's suggestion&hellip;</p>
-    <div class="items" id="items"></div>
-    <button id="mic-btn" class="mic-btn" aria-label="Voice command">🎤 Say a command</button>
-    <div class="clock" id="clock"></div>
-  </div>
+<main class="app">
+  <header class="top">
+    <div class="clock"><div class="time" id="time"></div><div class="date" id="date"></div><div class="milan" id="milan"></div></div>
+    <nav class="nav" id="nav" aria-label="Sections"></nav>
+    <button class="priv" id="priv" aria-pressed="false"><span id="privIcon">👁</span><span id="privText">Full view</span></button>
+  </header>
+  <div class="bar" aria-hidden="true"><i id="prog"></i></div>
+  <section class="stage" id="stage"></section>
+</main>
 
-  <script>
-    const WORKER_URL = "https://core-heart.llacognata.workers.dev";
+<script>
+  /* ===== DUMMY DATA — replace section by section =====
+     When a feature goes live, load its data from the Worker (e.g. GET /cards)
+     and drop its "Sample data" tag. */
+  const DUMMY = {
+    events: [
+      { when: "Today 6:30 PM", what: "Dinner with neighbors", where: "10 min walk" },
+      { when: "Tomorrow 10:00", what: "Farmers market", where: "Mill City" },
+      { when: "Tomorrow 7:00 PM", what: "Movie night", where: "Home" },
+      { when: "Sat 9:00 AM", what: "Trash & recycling out", where: "" },
+    ],
+    cook: [
+      { name: "Pasta al limone", why: "Uses the lemons and the ricotta that need finishing", time: "25 min", uses: ["limoni", "ricotta", "spaghetti"] },
+      { name: "Frittata di zucchine", why: "Eggs plus zucchini bought 5 days ago", time: "20 min", uses: ["uova", "zucchine", "parmigiano"] },
+    ],
+    ate: [
+      { day: "Yesterday", what: "Risotto ai funghi" }, { day: "Thursday", what: "Salmon, roasted potatoes" },
+      { day: "Wednesday", what: "Lasagna" }, { day: "Tuesday", what: "Tacos" }, { day: "Monday", what: "Minestrone" },
+    ],
+    useUp: [
+      { item: "Zucchine", note: "bought 5 days ago", warn: true }, { item: "Ricotta", note: "bought 6 days ago", warn: true },
+      { item: "Spinaci", note: "bought 3 days ago" }, { item: "Yogurt", note: "bought 4 days ago" },
+    ],
+    shopping: ["Latte", "Pane", "Pomodori", "Basilico", "Caffè", "Parmigiano"],
+    eatOut: [
+      { name: "Trattoria Sample", kind: "Italian · to try", dist: "7 min walk", open: "Open until 10 PM" },
+      { name: "Noodle Place Sample", kind: "Ramen · to try", dist: "4 min walk", open: "Open until 9 PM" },
+    ],
+    money: { day: "Day 3 of 31", elapsed: 10, cats: [["Groceries", 90, 600], ["Dining", 60, 250], ["Transport", 20, 200], ["Fun", 35, 150]],
+             bills: [["Internet", "Oct 8", 65], ["Streaming", "Oct 12", 22], ["Phone", "Oct 15", 80]] },
+    safety: { hood: "Downtown West", total: 31, police: 18, fire: 9, crisis: 4, note: "About normal for this hour",
+              hours: [3, 2, 2, 1, 1, 2, 3, 4, 6, 7, 8, 9, 8, 7, 9, 10, 9, 8, 7, 6, 5, 4, 3, 3] },
+  };
 
-    async function loadSuggestion() {
-      const introEl = document.getElementById("intro");
-      const itemsEl = document.getElementById("items");
+  const DWELL = 30;                 // seconds each card stays before rotating
+  let privacy = false, cur = 0, left = DWELL;
+  const $ = (id) => document.getElementById(id);
+  const money = (n) => privacy ? "•••" : "$" + n.toLocaleString();
+  const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const tag = () => '<span class="tag">Sample data</span>';
+
+  const CARDS = [
+    { id: "events", icon: "📅", label: "Events", accent: "#64b5f6", render: () => `
+      <h2>Coming up ${tag()}</h2>
+      <div class="rows">${DUMMY.events.map(e => `<div class="row"><span class="k">${e.when}</span>${e.what}<span class="m">${e.where}</span></div>`).join("")}</div>` },
+
+    { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => `
+      <h2>Kitchen ${tag()}</h2>
+      <div class="grid2" style="grid-template-columns:1.2fr 1fr">
+        <div><div class="sec">What to cook</div>${DUMMY.cook.map(r => `<div class="tile" style="margin-bottom:.9rem"><h3>${r.name}</h3><p>${r.why} · ${r.time}</p>
+          <div class="chips" style="margin-top:.5rem">${r.uses.map(u => `<span class="chip">${u}</span>`).join("")}</div></div>`).join("")}</div>
+        <div><div class="sec">Use it up</div>
+          <div class="chips" style="margin:.2rem 0 1.4rem">${DUMMY.useUp.map(i => `<span class="chip ${i.warn ? "warn" : ""}">${i.item} · ${i.note}</span>`).join("")}</div>
+          <div class="sec">We ate</div>
+          <div class="rows">${DUMMY.ate.slice(0, 4).map(a => `<div class="row" style="font-size:1.1rem;padding:.55rem 0"><span class="k" style="width:6.5rem">${a.day}</span>${a.what}</div>`).join("")}</div></div>
+      </div>` },
+
+    { id: "shop", icon: "🛒", label: "Shopping", accent: "#4caf7d", render: () => `
+      <h2>Shopping list ${tag()}</h2>
+      <p class="big">${DUMMY.shopping.length} items to get</p>
+      <div class="chips">${DUMMY.shopping.map(i => `<span class="chip">${i}</span>`).join("")}</div>` },
+
+    { id: "eatout", icon: "📍", label: "Eat out", accent: "#f06292", render: () => { const live = EAT.state === "ok"; return `
+      <h2>Where to eat tonight <span class="tag">${live ? "Live · Claude" : "Sample data"}</span></h2>
+      <div class="grid2">${EAT.places.map(p => `<div class="tile"><h3>${esc(p.name)}</h3><p>${esc(p.kind)}</p><p>${esc([p.walk, p.hours].filter(Boolean).join(" · "))}</p>${p.why ? `<p style="color:var(--text)">${esc(p.why)}</p>` : ""}</div>`).join("")}</div>`; } },
+
+    { id: "weather", icon: "☀️", label: "Weather", accent: "#4dd0e1", render: () => { const w = WX;
+      if (w.state !== "ok") return `<h2>Weather</h2><p class="big">${w.state === "loading" ? "Loading weather…" : "Can't reach the weather service"}</p><p class="sub">${w.state === "loading" ? "" : "Will retry shortly."}</p>`;
+      return `<h2>Weather · Downtown West <span class="tag">Live · Open-Meteo</span></h2>
+      <p class="big">${w.ico} ${w.temp}°F · ${w.desc}</p>
+      <p class="sub">Feels like ${w.feels}° · High ${w.hi}° · Low ${w.lo}° · Wind ${w.wind} mph</p>
+      <p class="sub" style="color:var(--text)">${w.tip}</p>
+      ${w.air ? `<p class="sub">Air quality ${w.air.aqi} · ${w.air.label} · PM2.5 ${w.air.pm}</p>` : ""}
+      <div class="stats">${w.days.map(d => `<div class="stat"><b>${d.hi}°</b><span>${d.name} ${d.ico} · low ${d.lo}°</span></div>`).join("")}</div>`; } },
+
+    { id: "money", icon: "💰", label: "Money", accent: "#81c784", render: () => { const m = DUMMY.money;
+      const spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), pct = Math.round(spent / bud * 100);
+      return `<h2>Spending this month ${tag()}</h2>
+      <div class="grid2"><div>${m.cats.map(c => { const p = Math.round(c[1] / c[2] * 100);
+        return `<div class="cat ${p >= 80 ? "hot" : ""}"><div class="l"><span>${c[0]}</span><span>${privacy ? p + "%" : money(c[1]) + " of " + money(c[2]) + " · " + p + "%"}</span></div><div class="bar"><i style="width:${Math.min(p, 100)}%"></i></div></div>`; }).join("")}</div>
+      <div><p class="big">${pct}% of budget used</p><p class="sub">${m.day} · ${m.elapsed}% of the month gone${pct > m.elapsed + 5 ? " — a bit ahead of pace" : ""}</p>
+        <div class="rows" style="margin-top:1.4rem">${m.bills.map(b => `<div class="row" style="font-size:1.15rem"><span class="k" style="width:6rem">${b[1]}</span>${b[0]}<span class="m">${money(b[2])}</span></div>`).join("")}</div></div></div>`; } },
+
+    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", render: () => { const s = DUMMY.safety, mx = Math.max(...s.hours), nowH = new Date().getHours(); return `
+      <h2>911 · ${s.hood} · last 12 hours ${tag()}</h2>
+      <p class="big">${s.total} calls — ${s.note.toLowerCase()}</p>
+      <div class="stats"><div class="stat"><b>${s.police}</b><span>Police</span></div><div class="stat"><b>${s.fire}</b><span>Fire</span></div><div class="stat"><b>${s.crisis}</b><span>Behavioral crisis</span></div></div>
+      <div class="hours">${s.hours.map((h, i) => `<i class="${i === nowH ? "now" : ""}" style="height:${Math.round(h / mx * 100)}%"></i>`).join("")}</div>
+      <div class="foot">Typical calls by hour of day · outlined bar is now</div>`; } },
+  ];
+
+  /* ===== Worker connection + Eat out (Claude picks, Worker caches 3 h) ===== */
+  const WORKER_URL = "https://core-heart.llacognata.workers.dev";
+  // Open the page once as index.html?key=YOUR_HUB_SECRET; it is stored on the tablet and removed from the URL.
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("key")) { try { localStorage.setItem("hub_key", qs.get("key")); } catch (e) {} history.replaceState(null, "", location.pathname); }
+  const hubKey = () => { try { return localStorage.getItem("hub_key") || ""; } catch (e) { return ""; } };
+
+  let EAT = { state: "sample", places: DUMMY.eatOut.map(p => ({ name: p.name, kind: p.kind, walk: p.dist, hours: p.open })) };
+  async function loadEatOut() {
+    try {
+      const r = await fetch(WORKER_URL + "/eat-out", { headers: { "X-Hub-Secret": hubKey() } });
+      const j = await r.json();
+      if (!r.ok || j.error || !Array.isArray(j.places) || !j.places.length) throw new Error(j.message || r.status);
+      EAT = { state: "ok", places: j.places.slice(0, 2) };
+    } catch (e) { console.warn("eat-out:", e.message || e); }   // keep sample / last good picks
+    const el = cards()[cur]; if (el && CARDS[cur].id === "eatout") el.innerHTML = CARDS[cur].render();
+  }
+
+  /* ===== live weather (Open-Meteo: free, no API key) ===== */
+  const LAT = 44.975, LON = -93.275;        // Downtown West, Minneapolis (approx.)
+  let WX = { state: "loading" };
+  const WMO = (c) => c === 0 ? ["Clear", "☀️"] : c <= 2 ? ["Partly cloudy", "⛅"] : c === 3 ? ["Cloudy", "☁️"] : c <= 48 ? ["Fog", "🌫️"]
+    : c <= 57 ? ["Drizzle", "🌦️"] : c <= 67 ? ["Rain", "🌧️"] : c <= 77 ? ["Snow", "🌨️"] : c <= 82 ? ["Showers", "🌧️"] : c <= 86 ? ["Snow showers", "🌨️"] : ["Thunderstorm", "⛈️"];
+  async function loadWeather() {
+    try {
+      const url = "https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON +
+        "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m&hourly=precipitation_probability" +
+        "&daily=weather_code,temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph" +
+        "&timezone=America%2FChicago&forecast_days=5";
+      const j = await (await fetch(url)).json();
+      if (!j.current) throw new Error("bad response");
+      const c = j.current, [desc, ico] = WMO(c.weather_code), feels = Math.round(c.apparent_temperature);
+      const day = c.time.slice(0, 10), hr = c.time.slice(0, 13);
+      const i = j.hourly.time.findIndex((t, k) => t.slice(0, 10) === day && t.slice(0, 13) >= hr && j.hourly.precipitation_probability[k] >= 50);
+      let tip = feels <= 32 ? "Bundle up." : feels <= 50 ? "Bring a jacket." : feels <= 65 ? "A light layer is enough." : "No jacket needed.";
+      if (i >= 0) { const h = +j.hourly.time[i].slice(11, 13); tip += " Rain likely around " + ((h % 12) || 12) + (h < 12 ? " AM." : " PM."); }
+      WX = { state: "ok", temp: Math.round(c.temperature_2m), feels, desc, ico, wind: Math.round(c.wind_speed_10m),
+        hi: Math.round(j.daily.temperature_2m_max[0]), lo: Math.round(j.daily.temperature_2m_min[0]), tip,
+        days: j.daily.time.slice(1).map((t, k) => ({ name: new Date(t + "T12:00").toLocaleDateString([], { weekday: "short" }),
+          hi: Math.round(j.daily.temperature_2m_max[k + 1]), lo: Math.round(j.daily.temperature_2m_min[k + 1]), ico: WMO(j.daily.weather_code[k + 1])[1] })) };
+    } catch (e) { if (WX.state !== "ok") WX = { state: "error" }; }   // keep the last good reading on a hiccup
+    if (WX.state === "ok") {
       try {
-        const res = await fetch(WORKER_URL);
-        const data = await res.json();
-        if (data.error) {
-          introEl.textContent = "⚠ " + data.message;
-          introEl.classList.add("error");
-          itemsEl.innerHTML = "";
-        } else {
-          introEl.textContent = data.intro;
-          introEl.classList.remove("error");
-          renderItems(data.items || []);
-        }
-      } catch (err) {
-        // The fetch itself failed — Worker unreachable, DNS, tablet Wi-Fi, etc.
-        introEl.textContent = "⚠ Can't reach CoreHeart — check the tablet's Wi-Fi connection.";
-        introEl.classList.add("error");
-        itemsEl.innerHTML = "";
-      }
+        const a = await (await fetch("https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + LAT + "&longitude=" + LON + "&current=us_aqi,pm2_5")).json();
+        const q = a.current.us_aqi;
+        WX.air = { aqi: Math.round(q), pm: Math.round(a.current.pm2_5),
+          label: q <= 50 ? "Good" : q <= 100 ? "Moderate" : q <= 150 ? "Unhealthy for sensitive groups" : q <= 200 ? "Unhealthy" : q <= 300 ? "Very unhealthy" : "Hazardous" };
+      } catch (e) { /* air line simply stays hidden */ }
     }
+    const el = cards()[cur]; if (el && CARDS[cur].id === "weather") el.innerHTML = CARDS[cur].render();
+  }
 
-    function renderItems(items) {
-      const container = document.getElementById("items");
-      container.innerHTML = "";
-      items.forEach((name) => {
-        const btn = document.createElement("button");
-        btn.className = "item-btn";
-        btn.textContent = name;
-        btn.onclick = () => {
-          // Placeholder: currently just a visual toggle, no backend call.
-          // Future step: POST to a new Worker route (e.g. /shopping-list)
-          // that writes into a `shopping_list` table — same auth/rate-limit
-          // pattern already in place, just a new route.
-          btn.classList.toggle("selected");
-        };
-        container.appendChild(btn);
-      });
-    }
+  /* ===== group + order the sections (tab order = rotation order) ===== */
+  const GROUP = { events: "Today", weather: "Today", safety: "Today",
+                  kitchen: "Food", eatout: "Food", shop: "Food", money: "Money" };
+  const ORDER = Object.keys(GROUP);
+  CARDS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
 
-    // Fake for now — tap-to-talk, not real speech recognition yet. Future
-    // step: wire this to the browser's SpeechRecognition API, send the
-    // transcript to a new Worker route, and have Claude parse it into
-    // {action, item} the same way we parse the intro/items JSON today.
-    const micBtn = document.getElementById("mic-btn");
-    let micTimeout;
-    micBtn.onclick = () => {
-      clearTimeout(micTimeout);
-      micBtn.textContent = "🎤 Listening…";
-      micBtn.classList.add("listening");
-      micTimeout = setTimeout(() => {
-        micBtn.textContent = "🎤 Say a command";
-        micBtn.classList.remove("listening");
-      }, 2000);
-    };
+  /* ===== build UI ===== */
+  CARDS.forEach((c, i) => {
+    const t = document.createElement("button");
+    t.className = "tab"; t.innerHTML = `<span>${c.icon}</span><span>${c.label}</span>`; t.setAttribute("aria-label", c.label);
+    t.onclick = () => go(i);
+    let g = $("nav").lastElementChild;
+    if (!g || g.dataset.g !== GROUP[c.id]) { g = document.createElement("div"); g.className = "grp"; g.dataset.g = GROUP[c.id];
+      g.innerHTML = `<div class="gl">${GROUP[c.id]}</div><div class="gi"></div>`; $("nav").appendChild(g); }
+    g.querySelector(".gi").appendChild(t);
+    const d = document.createElement("article"); d.className = "card"; d.style.setProperty("--accent", c.accent); $("stage").appendChild(d);
+  });
+  const tabs = () => [...document.querySelectorAll(".tab")], cards = () => [...document.querySelectorAll(".card")];
 
-    function tickClock() {
-      document.getElementById("clock").textContent = new Date().toLocaleString();
-    }
+  function go(i) {
+    cur = (i + CARDS.length) % CARDS.length; left = DWELL;
+    cards().forEach((el, k) => { if (k === cur) el.innerHTML = CARDS[k].render(); el.classList.toggle("show", k === cur); });
+    tabs().forEach((t, k) => t.classList.toggle("on", k === cur));
+    document.documentElement.style.setProperty("--accent", CARDS[cur].accent);
+    tabs()[cur].scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }
 
-    loadSuggestion();
-    tickClock();
-    setInterval(tickClock, 1000);
-    setInterval(loadSuggestion, 60000); // poll every minute; cheap at this volume
-  </script>
+  $("priv").onclick = () => {
+    privacy = !privacy;
+    $("priv").classList.toggle("on", privacy); $("priv").setAttribute("aria-pressed", privacy);
+    $("privIcon").textContent = privacy ? "🔒" : "👁"; $("privText").textContent = privacy ? "Limited view" : "Full view";
+    cards()[cur].innerHTML = CARDS[cur].render();
+  };
+
+  function tick() {
+    const d = new Date();
+    $("time").textContent = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    $("date").textContent = d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+    const rome = (o) => d.toLocaleString("en-US", { timeZone: "Europe/Rome", ...o });
+    const rh = Number(rome({ hour: "numeric", hour12: false })) % 24;
+    $("milan").innerHTML = `<span class="mdot ${rh >= 8 && rh < 22 ? "ok" : ""}"></span>Milan ${rome({ hour: "numeric", minute: "2-digit" })}`;
+    left -= 1; $("prog").style.width = ((DWELL - left) / DWELL * 100) + "%";
+    if (left <= 0) go(cur + 1);
+  }
+  go(0); tick(); setInterval(tick, 1000);
+  loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
+  loadEatOut(); setInterval(loadEatOut, 3 * 60 * 60 * 1000);
+</script>
 </body>
 </html>
