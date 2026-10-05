@@ -299,7 +299,7 @@
     { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", keep: true, render: () => `
       <h2>911 · Downtown &amp; North Loop · live <span class="tag">City of Minneapolis</span></h2>
       <div class="map" style="flex:1"><iframe src="${esc(TABLEAU_URL)}" scrolling="no" allowfullscreen></iframe>
-        <div class="mz"><button class="pan" data-act="mz-l">◀</button><button class="pan" data-act="mz-u">▲</button><button class="pan" data-act="mz-d">▼</button><button class="pan" data-act="mz-r">▶</button><button data-act="mz-out">−</button><b>Fit</b><button data-act="mz-in">+</button></div></div>` },
+        <div class="mz"><button class="pan" data-act="mz-l">◀</button><button class="pan" data-act="mz-u">▲</button><button class="pan" data-act="mz-d">▼</button><button class="pan" data-act="mz-r">▶</button><button data-act="mz-out">−</button><b>Fit</b><button data-act="mz-in">+</button><button data-act="mz-save" title="Save this view as the default">💾</button><button data-act="mz-home" title="Back to the saved default view">⌂</button></div></div>` },
   ];
 
   /* ===== Worker connection + Eat out (Claude picks, Worker caches 3 h) ===== */
@@ -341,7 +341,7 @@
   const evEmoji = (t) => { t = t.toLowerCase(); return /dinner|lunch|brunch|restaurant/.test(t) ? "🍽️" : /birthday/.test(t) ? "🎂" : /flight|airport/.test(t) ? "✈️" : /movie|film/.test(t) ? "🎬" : /call|zoom/.test(t) ? "📞" : /meeting|work/.test(t) ? "💼" : /trash|recycl/.test(t) ? "♻️" : /market/.test(t) ? "🥕" : "📌"; };
   const tNow = new Date();
   let EV = { state: "sample", list: DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e })) };
-  const ADD = { phase: "idle", text: "", msg: "", target: "event" };
+  const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false };
   let hold = false;                                   // pauses card rotation while you're adding an event
   const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) { if (!(CARDS[cur].keep && el.innerHTML)) el.innerHTML = CARDS[cur].render(); fitMap(); } };
   async function loadEvents() {
@@ -354,14 +354,23 @@
     refreshCard("events");
   }
   function setAdd(o) { Object.assign(ADD, o); hold = ["listening", "confirm", "saving"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
-  function listen(target = "event") {
+  function listen(target = "event", retried = false) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return setAdd({ phase: "error", msg: "Voice isn't supported in this browser.", target });
-    const r = new SR(); r.lang = "en-US"; r.interimResults = false;
-    r.onresult = (e) => setAdd({ phase: "confirm", text: e.results[0][0].transcript });
-    r.onerror = (e) => setAdd({ phase: "error", msg: "Mic error: " + e.error });
-    r.onend = () => { if (ADD.phase === "listening") setAdd({ phase: "idle" }); };
-    setAdd({ phase: "listening", target }); r.start();
+    if (!SR) return setAdd({ phase: "error", msg: "Voice input isn't supported in this browser (Chrome or Safari work).", target });
+    const r = new SR(); r.lang = "en-US"; r.interimResults = true; r.maxAlternatives = 1;
+    let got = false;
+    r.onaudiostart = () => { ADD.ready = true; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); };   // only now is it listening
+    r.onresult = (e) => { const x = e.results[e.results.length - 1]; if (x.isFinal) { got = true; setAdd({ phase: "confirm", text: x[0].transcript }); } };
+    r.onerror = (e) => {
+      if (e.error === "no-speech" && !retried) return;   // onend will try once more
+      got = true;
+      const why = { "no-speech": "I didn't hear anything. Tap the mic and start talking right after “Speak now”.", "not-allowed": "The microphone is blocked. Allow it in the browser's site settings (the page needs https).",
+        "service-not-allowed": "The microphone is blocked. Allow it in the browser's site settings.", "audio-capture": "No microphone was found.", "network": "Voice input needs an internet connection." }[e.error];
+      setAdd({ phase: "error", msg: why || "Mic error: " + e.error });
+    };
+    r.onend = () => { if (ADD.phase !== "listening") return; if (!got && !retried) return listen(target, true); setAdd({ phase: "idle" }); };
+    ADD.ready = false; setAdd({ phase: "listening", target });
+    try { r.start(); } catch (e) { setAdd({ phase: "error", msg: "Mic error: " + e.message }); }
   }
   async function saveEvent() {
     setAdd({ phase: "saving" });
@@ -386,10 +395,7 @@
     else if (a === "plan-day") { const name = PICK; PICK = null; if (needDb()) return; await mealCall("/meal-plan", { date: d.date, name }); }
     else if (a === "plan-done") { if (!needDb()) await mealCall("/meals", { name: d.name, plan_id: d.id }); }
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
-    else if (a.startsWith("mz-")) { left = DWELL;       // zoom/pan the 911 map; also keeps the card on screen a bit longer
-      if (a === "mz-in") MAPZ.level = Math.min(MAP_ZOOMS.length - 1, MAPZ.level + 1); else if (a === "mz-out") MAPZ.level = Math.max(0, MAPZ.level - 1);
-      else { const s = 0.3; if (a === "mz-l") MAPZ.fx -= s * MAPZ.vw; if (a === "mz-r") MAPZ.fx += s * MAPZ.vw; if (a === "mz-u") MAPZ.fy -= s * MAPZ.vh; if (a === "mz-d") MAPZ.fy += s * MAPZ.vh; }
-      fitMap(); }
+    else if (a.startsWith("mz-")) { left = DWELL; mapAction(a); }      // 911 map zoom, pan, save default; also keeps the card on screen longer
     else if (a === "pause") togglePause(); else if (a === "speak") speakCard();
     else if (a === "daily") toggleDaily();
   });
@@ -428,7 +434,7 @@
   }
   // One status bar for both voice flows (calendar events and meals).
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
-    : ADD.phase === "listening" ? (target === "meal" ? "🎙 Listening… “we ate lasagna” or “plan lasagna for Friday”" : "🎙 Listening… try “Dinner with Anna Friday at 7pm”")
+    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna” or “plan lasagna for Friday”" : "“Dinner with Anna Friday at 7pm”")
     : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="no">Cancel</button>`
     : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="no">OK</button>';
 
@@ -456,6 +462,18 @@
     m.querySelector(".mz b").textContent = MAPZ.level ? "×" + z : "Fit";
     m.querySelectorAll(".mz .pan").forEach(b => { b.style.display = MAPZ.level ? "" : "none"; });
   }
+  const savedMapView = () => { try { return JSON.parse(localStorage.getItem("map_view") || "null"); } catch (e) { return null; } };
+  function mapAction(a) {
+    if (a === "mz-in") MAPZ.level = Math.min(MAP_ZOOMS.length - 1, MAPZ.level + 1);
+    else if (a === "mz-out") MAPZ.level = Math.max(0, MAPZ.level - 1);
+    else if (a === "mz-save") {   // remember this zoom and position on this tablet; it becomes the opening view
+      try { localStorage.setItem("map_view", JSON.stringify({ level: MAPZ.level, fx: Math.round(MAPZ.fx), fy: Math.round(MAPZ.fy) })); } catch (e) {}
+      const b = document.querySelector(".card.show .mz b"); if (b) { b.textContent = "Saved ✓"; setTimeout(fitMap, 1800); } return;
+    }
+    else if (a === "mz-home") Object.assign(MAPZ, savedMapView() || { level: 0 });
+    else { const s = 0.3; if (a === "mz-l") MAPZ.fx -= s * MAPZ.vw; if (a === "mz-r") MAPZ.fx += s * MAPZ.vw; if (a === "mz-u") MAPZ.fy -= s * MAPZ.vh; if (a === "mz-d") MAPZ.fy += s * MAPZ.vh; }
+    fitMap();
+  }
   window.addEventListener("resize", fitMap);
   let ARMED = false, DAILY = false, spokenDay = ""; try { DAILY = localStorage.getItem("daily_voice") === "1"; spokenDay = localStorage.getItem("spoken_day") || ""; } catch (e) {}
   const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
@@ -471,7 +489,13 @@
     if (id === "weather") return WX.state === "ok" ? `It's ${WX.temp} degrees and ${WX.desc.toLowerCase()}. ${WX.tip}` : "";
     return "";
   }
-  const speakCard = () => speak(sayFor(CARDS[cur].id) || "There is nothing to read on this card.");
+  function cardText() {   // whatever is written on the current card, minus buttons and decoration
+    const el = cards()[cur]; if (!el) return "";
+    const c = el.cloneNode(true); c.querySelectorAll("button, .tag, .hi, .addbar, .mz, iframe, .dow, .tab").forEach(n => n.remove());
+    return c.innerHTML.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&[a-z]+;/g, " ").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim().slice(0, 500);
+  }
+  const speakCard = () => { const id = CARDS[cur].id, text = id === "safety" ? "" : sayFor(id) || cardText();
+    speak(text || (id === "safety" ? "The 911 map is a picture, so I can't read it aloud." : "There is nothing to read on this card.")); };
   function toggleDaily() {
     DAILY = !DAILY; try { localStorage.setItem("daily_voice", DAILY ? "1" : "0"); } catch (e) {}
     $("dailyBtn").classList.toggle("on", DAILY); if (DAILY) speak("Daily suggestions are on. I'll read them at five p.m.");
@@ -583,7 +607,7 @@
     dailyVoice(d); if (!hold && !PAUSED) left -= 1; $("prog").style.width = ((DWELL - left) / DWELL * 100) + "%";
     if (left <= 0) go(cur + 1);
   }
-  $("dailyBtn").classList.toggle("on", DAILY);
+  $("dailyBtn").classList.toggle("on", DAILY); Object.assign(MAPZ, savedMapView() || {});
   go(0); tick(); setInterval(tick, 1000);
   loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
   loadEatOut(); setInterval(() => loadEatOut(), 6 * 60 * 60 * 1000);   // reuses the saved picks unless they're 12 h old
