@@ -150,6 +150,9 @@
   .chip.gap { border-color: color-mix(in srgb, var(--accent) 55%, transparent); color: var(--text); }
   #pauseBtn.on { border-color: #ffb74d; color: #ffb74d; background: rgba(255,183,77,.12); }
   #dailyBtn.on { border-color: #4caf7d; color: #4caf7d; background: rgba(76,175,125,.12); }
+  .mz { position: absolute; right: .8rem; top: .8rem; z-index: 5; display: flex; gap: .4rem; align-items: center; padding: .4rem; border-radius: 999px; background: rgba(11,12,16,.78); }
+  .mz button { width: 2.6rem; height: 2.6rem; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.12); font-size: 1.15rem; }
+  .mz b { min-width: 3.2rem; text-align: center; font-weight: 500; }
 </style>
 </head>
 <body>
@@ -201,9 +204,11 @@
   // Attempts to make the map appear: force the desktop layout and pick the map view. Clear this string to test the plain link.
   const TABLEAU_EXTRA = "&%3Adevice=desktop&Select%20Map%20View=Street";
   const TABLEAU_URL = TABLEAU_BASE + TABLEAU_EXTRA;
-  // Tableau lays the dashboard out at TABLEAU_VIEW size, then the page shrinks it to fit the card (no scrollbars).
-  // To show only part of it (the map), set TABLEAU_CROP to that region of the TABLEAU_VIEW layout, e.g. { x: 400, y: 120, w: 900, h: 700 }.
-  const TABLEAU_VIEW = { w: 1600, h: 1000 };
+  // Tableau lays the dashboard out at TABLEAU_VIEW size; the page scales it to the card's WIDTH (the bottom may be cut off, no scrollbars).
+  // Make h tall enough to hold the whole dashboard. TABLEAU_CROP can start from a region instead, e.g. { x: 400, y: 120, w: 900, h: 700 }.
+  const TABLEAU_VIEW = { w: 1600, h: 2000 };
+  const MAP_ZOOMS = [1, 1.5, 2.25, 3.4];             // fit + 3 zoom-in levels
+  const MAPZ = { level: 0, fx: 0, fy: 0, vw: 1, vh: 1 };
   const TABLEAU_CROP = null;
 
   const DWELL = 30;                 // seconds each card stays before rotating
@@ -291,9 +296,10 @@
           return `<div class="cat ${p >= 80 ? "hot" : ""}"><div class="l"><span>${c[0]}</span><span>${privacy ? p + "%" : money(c[1]) + " of " + money(c[2]) + " · " + p + "%"}</span></div><div class="bar"><i style="width:${Math.min(p, 100)}%"></i></div></div>`; }).join("")}
           <div class="chips">${m.bills.map(b => `<span class="chip">${b[0]} · ${b[1]} · ${money(b[2])}</span>`).join("")}</div></div></div>`; } },
 
-    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", render: () => `
+    { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", keep: true, render: () => `
       <h2>911 · Downtown &amp; North Loop · live <span class="tag">City of Minneapolis</span></h2>
-      <div class="map" style="flex:1"><iframe src="${esc(TABLEAU_URL)}" allowfullscreen></iframe></div>` },
+      <div class="map" style="flex:1"><iframe src="${esc(TABLEAU_URL)}" scrolling="no" allowfullscreen></iframe>
+        <div class="mz"><button class="pan" data-act="mz-l">◀</button><button class="pan" data-act="mz-u">▲</button><button class="pan" data-act="mz-d">▼</button><button class="pan" data-act="mz-r">▶</button><button data-act="mz-out">−</button><b>Fit</b><button data-act="mz-in">+</button></div></div>` },
   ];
 
   /* ===== Worker connection + Eat out (Claude picks, Worker caches 3 h) ===== */
@@ -337,7 +343,7 @@
   let EV = { state: "sample", list: DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e })) };
   const ADD = { phase: "idle", text: "", msg: "", target: "event" };
   let hold = false;                                   // pauses card rotation while you're adding an event
-  const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) { el.innerHTML = CARDS[cur].render(); fitMap(); } };
+  const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) { if (!(CARDS[cur].keep && el.innerHTML)) el.innerHTML = CARDS[cur].render(); fitMap(); } };
   async function loadEvents() {
     try {
       const j = await (await fetch(WORKER_URL + "/events", { headers: { "X-Hub-Secret": hubKey() } })).json();
@@ -380,6 +386,10 @@
     else if (a === "plan-day") { const name = PICK; PICK = null; if (needDb()) return; await mealCall("/meal-plan", { date: d.date, name }); }
     else if (a === "plan-done") { if (!needDb()) await mealCall("/meals", { name: d.name, plan_id: d.id }); }
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
+    else if (a.startsWith("mz-")) { left = DWELL;       // zoom/pan the 911 map; also keeps the card on screen a bit longer
+      if (a === "mz-in") MAPZ.level = Math.min(MAP_ZOOMS.length - 1, MAPZ.level + 1); else if (a === "mz-out") MAPZ.level = Math.max(0, MAPZ.level - 1);
+      else { const s = 0.3; if (a === "mz-l") MAPZ.fx -= s * MAPZ.vw; if (a === "mz-r") MAPZ.fx += s * MAPZ.vw; if (a === "mz-u") MAPZ.fy -= s * MAPZ.vh; if (a === "mz-d") MAPZ.fy += s * MAPZ.vh; }
+      fitMap(); }
     else if (a === "pause") togglePause(); else if (a === "speak") speakCard();
     else if (a === "daily") toggleDaily();
   });
@@ -432,12 +442,19 @@
   /* ===== spoken suggestions (the browser's built-in text-to-speech: free, voice depends on the tablet) ===== */
   let PAUSED = false;
   function togglePause() { PAUSED = !PAUSED; const b = $("pauseBtn"); b.textContent = PAUSED ? "▶" : "⏸"; b.classList.toggle("on", PAUSED); b.title = PAUSED ? "Resume card rotation" : "Pause card rotation"; }
-  function fitMap() {      // shrink the Tableau dashboard to the card (optionally showing only a region of it)
+  function fitMap() {      // fit the Tableau dashboard to the card width, then apply the zoom level
     const m = document.querySelector(".card.show .map"), f = m && m.querySelector("iframe"); if (!f) return;
-    const r = TABLEAU_CROP || { x: 0, y: 0, w: TABLEAU_VIEW.w, h: TABLEAU_VIEW.h }, cw = m.clientWidth, ch = m.clientHeight; if (!cw || !ch) return;
-    const k = Math.min(cw / r.w, ch / r.h);
-    Object.assign(f.style, { position: "absolute", width: TABLEAU_VIEW.w + "px", height: TABLEAU_VIEW.h + "px", transformOrigin: "0 0",
-      left: (cw - r.w * k) / 2 + "px", top: (ch - r.h * k) / 2 + "px", transform: `scale(${k}) translate(${-r.x}px, ${-r.y}px)` });
+    const cw = m.clientWidth, ch = m.clientHeight; if (!cw || !ch) return;
+    const V = TABLEAU_VIEW, r = TABLEAU_CROP || { x: 0, y: 0, w: V.w, h: V.h }, z = MAP_ZOOMS[MAPZ.level], k = (cw / r.w) * z;
+    let left, top;
+    if (MAPZ.level === 0) { left = -r.x * k; top = -r.y * k; MAPZ.fx = r.x + r.w / 2; MAPZ.fy = r.y + ch / (2 * k); }
+    else { left = cw / 2 - MAPZ.fx * k; top = ch / 2 - MAPZ.fy * k; }
+    left = Math.min(0, Math.max(cw - V.w * k, left)); top = Math.min(0, Math.max(ch - V.h * k, top));
+    MAPZ.vw = cw / k; MAPZ.vh = ch / k;
+    // The iframe is 24px wider than the layout so any scrollbar sits in the clipped strip and never shows.
+    Object.assign(f.style, { position: "absolute", width: V.w + 24 + "px", height: V.h + "px", transformOrigin: "0 0", left: left + "px", top: top + "px", transform: `scale(${k})` });
+    m.querySelector(".mz b").textContent = MAPZ.level ? "×" + z : "Fit";
+    m.querySelectorAll(".mz .pan").forEach(b => { b.style.display = MAPZ.level ? "" : "none"; });
   }
   window.addEventListener("resize", fitMap);
   let ARMED = false, DAILY = false, spokenDay = ""; try { DAILY = localStorage.getItem("daily_voice") === "1"; spokenDay = localStorage.getItem("spoken_day") || ""; } catch (e) {}
@@ -543,7 +560,7 @@
     if (ADD.phase === "listening" || ADD.phase === "confirm") ADD.phase = "idle";
     if (ADD.phase !== "saving") hold = false;
     cur = (i + CARDS.length) % CARDS.length; left = DWELL;
-    cards().forEach((el, k) => { if (k === cur) el.innerHTML = CARDS[k].render(); el.classList.toggle("show", k === cur); });
+    cards().forEach((el, k) => { if (k === cur && !(CARDS[k].keep && el.innerHTML)) el.innerHTML = CARDS[k].render(); el.classList.toggle("show", k === cur); });
     tabs().forEach((t, k) => t.classList.toggle("on", k === cur));
     document.documentElement.style.setProperty("--accent", CARDS[cur].accent);
     fitMap(); tabs()[cur].scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
@@ -574,6 +591,7 @@
   DUMMY.shopping.forEach(i => fetchPhoto(i[3]));
   loadMeals(); setInterval(loadMeals, 10 * 60 * 1000);
   loadHeads(); setInterval(loadHeads, 15 * 60 * 1000);
+  setInterval(() => { const f = document.querySelector(".map iframe"); if (f) f.src = f.src; }, 30 * 60 * 1000);   // reload the 911 dashboard for fresh data
 </script>
 </body>
 </html>
