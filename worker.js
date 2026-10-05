@@ -11,7 +11,7 @@
 //   POST /events/quick {text} adds an event with Google's natural-language quick add
 //                 ("Dinner with Anna Friday 7pm").
 //   GET /meals    recent meals (with days since), meals not had in a while, dinner plan.
-//   POST /meals {name, meal_type?, plan_id?}   log what we ate.
+//   POST /meals {name, plan_id?}   log a meal eaten at home.
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
 //   GET /cards    the tablet's heads-up feed (core_card). Refreshed from the database at most
 //                 every 3 hours when asked, and by a cron trigger if you add one (optional).
@@ -179,9 +179,9 @@ async function sb(env, path, { method = "GET", body, prefer } = {}) {
 async function loadMealData(env) {
   const today = todayStr();
   const [recent, all, plan] = await Promise.all([
-    sb(env, "food_meal?select=id,name,eaten_on,meal_type&order=eaten_on.desc,created_at.desc&limit=8"),
+    sb(env, "food_meal?select=id,name,eaten_on&order=eaten_on.desc&limit=8"),
     sb(env, "v_meal_gaps?select=name,last_eaten_on,times_eaten&limit=200"),
-    sb(env, `food_meal_plan?select=id,planned_for,meal_type,name,status&status=eq.planned&planned_for=gte.${today}&order=planned_for.asc&limit=14`),
+    sb(env, `food_meal_plan?select=id,planned_for,name,status&status=eq.planned&planned_for=gte.${today}&order=planned_for.asc&limit=14`),
   ]);
   const planned = new Set(plan.map((p) => p.name.toLowerCase()));
   return {
@@ -207,17 +207,16 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
       await sb(env, `food_meal_plan?id=eq.${b.id}`, { method: "PATCH", body: { status: "skipped" } });
     } else if (path === "/meal-plan") {
       if (!name || !isDate(b.date)) throw new Error("Need a meal name and a date.");
-      await sb(env, "food_meal_plan?on_conflict=planned_for,meal_type", { method: "POST", prefer: "resolution=merge-duplicates",
-        body: { planned_for: b.date, meal_type: "dinner", name, status: "planned" } });
+      await sb(env, "food_meal_plan?on_conflict=planned_for", { method: "POST", prefer: "resolution=merge-duplicates",
+        body: { planned_for: b.date, name, status: "planned" } });
     } else {
       if (!name) throw new Error("Need a meal name.");
-      const type = ["breakfast", "lunch", "dinner", "snack"].includes(b.meal_type) ? b.meal_type : "dinner";
       const date = isDate(b.eaten_on) ? b.eaten_on : todayStr();
-      await sb(env, "food_meal", { method: "POST", body: { name, meal_type: type, eaten_on: date } });
-      // Close the matching plan: the one the tablet pointed at, or today's dinner plan if the name matches.
+      await sb(env, "food_meal", { method: "POST", body: { name, eaten_on: date } });
+      // Close the matching plan: the one the tablet pointed at, or that day's plan if the name matches.
       if (isId(b.plan_id)) await sb(env, `food_meal_plan?id=eq.${b.plan_id}`, { method: "PATCH", body: { status: "cooked" } });
-      else if (type === "dinner") {
-        const p = await sb(env, `food_meal_plan?select=id,name&planned_for=eq.${date}&meal_type=eq.dinner&status=eq.planned`);
+      else {
+        const p = await sb(env, `food_meal_plan?select=id,name&planned_for=eq.${date}&status=eq.planned`);
         if (p[0] && p[0].name.toLowerCase() === name.toLowerCase()) await sb(env, `food_meal_plan?id=eq.${p[0].id}`, { method: "PATCH", body: { status: "cooked" } });
       }
     }
@@ -230,10 +229,10 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
 
 // Card refresh: turn the database's "worth your attention" feed into rows the tablet can read.
 let lastCards = 0;
-const MANAGED_KINDS = ["reminder", "document", "checkup", "recurring", "stock", "item", "meal_gap", "meal_plan"];
+const MANAGED_KINDS = ["reminder", "stock", "item", "meal_gap", "meal_plan"];
 async function refreshCards(env) {
   const started = new Date().toISOString(), today = todayStr();
-  const ICON = { core: "🔔", health: "🩺", money: "🧾", food: "🥬", home: "🏠" };
+  const ICON = { core: "🔔", food: "🥬", home: "🏠" };
   const rows = await sb(env, "v_heads_up?select=*");
   const cards = rows.map((r) => {
     const d = daysBetween(r.due_on, today);
@@ -253,7 +252,7 @@ async function handleCards(env, allowedOrigin, force) {
   try {
     if (force || Date.now() - lastCards > 3 * 3600e3) await refreshCards(env);
     const now = encodeURIComponent(new Date().toISOString());
-    const cards = await sb(env, `core_card?select=id,domain,kind,headline,body,icon,priority&starts_at=lte.${now}&or=(expires_at.is.null,expires_at.gt.${now})&order=priority.desc,starts_at.desc&limit=8`);
+    const cards = await sb(env, `core_card?select=id,domain,kind,headline,body,icon,priority&or=(expires_at.is.null,expires_at.gt.${now})&order=priority.desc&limit=8`);
     return jsonResponse({ cards }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
