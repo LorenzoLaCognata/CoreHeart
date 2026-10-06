@@ -153,6 +153,11 @@
   .mz { position: absolute; right: .8rem; top: .8rem; z-index: 5; display: flex; gap: .4rem; align-items: center; padding: .4rem; border-radius: 999px; background: rgba(11,12,16,.78); }
   .mz button { width: 2.6rem; height: 2.6rem; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.12); font-size: 1.15rem; }
   .mz b { min-width: 3.2rem; text-align: center; font-weight: 500; }
+  .mz button { width: auto; height: 2.6rem; padding: 0 1.1rem; border-radius: 999px; font-size: 1rem; }
+  .sel { position: absolute; inset: 0; z-index: 4; display: none; cursor: crosshair; touch-action: none; background: rgba(0,0,0,.28); }
+  .map.selecting .sel { display: block; }
+  .sel .hint { position: absolute; left: 50%; top: 1rem; transform: translateX(-50%); background: #ffb300; color: #201500; padding: .4rem 1rem; border-radius: 999px; font-weight: 700; pointer-events: none; }
+  .sel .box { display: none; position: absolute; border: 2px dashed #ffb300; background: rgba(255,179,0,.18); }
 </style>
 </head>
 <body>
@@ -162,6 +167,7 @@
     <nav class="nav" id="nav" aria-label="Sections"></nav>
     <button class="priv" id="priv" aria-pressed="false"><span id="privIcon">👁</span><span id="privText">Full view</span></button>
     <button class="priv" id="pauseBtn" data-act="pause" aria-label="Pause or resume card rotation" title="Pause or resume card rotation">⏸</button>
+    <button class="priv" id="voiceBtn" data-act="voice" aria-label="Change the reading voice" title="Change the reading voice">🗣</button>
     <button class="priv" data-act="speak" aria-label="Read this card aloud" title="Read this card aloud">🔊</button>
     <button class="priv" id="dailyBtn" data-act="daily" aria-label="Daily spoken suggestions at 5 PM" title="Daily spoken suggestions at 5 PM">🔔</button>
   </header>
@@ -207,8 +213,6 @@
   // Tableau lays the dashboard out at TABLEAU_VIEW size; the page scales it to the card's WIDTH (the bottom may be cut off, no scrollbars).
   // Make h tall enough to hold the whole dashboard. TABLEAU_CROP can start from a region instead, e.g. { x: 400, y: 120, w: 900, h: 700 }.
   const TABLEAU_VIEW = { w: 1600, h: 2000 };
-  const MAP_ZOOMS = [1, 1.5, 2.25, 3.4];             // fit + 3 zoom-in levels
-  const MAPZ = { level: 0, fx: 0, fy: 0, vw: 1, vh: 1 };
   const TABLEAU_CROP = null;
 
   const DWELL = 30;                 // seconds each card stays before rotating
@@ -299,7 +303,8 @@
     { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", keep: true, render: () => `
       <h2>911 · Downtown &amp; North Loop · live <span class="tag">City of Minneapolis</span></h2>
       <div class="map" style="flex:1"><iframe src="${esc(TABLEAU_URL)}" scrolling="no" allowfullscreen></iframe>
-        <div class="mz"><button class="pan" data-act="mz-l">◀</button><button class="pan" data-act="mz-u">▲</button><button class="pan" data-act="mz-d">▼</button><button class="pan" data-act="mz-r">▶</button><button data-act="mz-out">−</button><b>Fit</b><button data-act="mz-in">+</button><button data-act="mz-save" title="Save this view as the default">💾</button><button data-act="mz-home" title="Back to the saved default view">⌂</button></div></div>` },
+        <div class="mz"><button data-act="map-select">✂️ Select map area</button><button data-act="map-reset">⌂ Whole dashboard</button></div>
+        <div class="sel"><div class="hint">Drag a box around the map</div><div class="box"></div></div></div>` },
   ];
 
   /* ===== Worker connection + Eat out (Claude picks, Worker caches 3 h) ===== */
@@ -354,9 +359,19 @@
     refreshCard("events");
   }
   function setAdd(o) { Object.assign(ADD, o); hold = ["listening", "confirm", "saving"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
+  const micDiag = () => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}]`;
+  async function micPreflight() {      // ask for the microphone explicitly so a permission problem is reported clearly
+    if (!window.isSecureContext) return "The microphone only works on https pages (this one is " + location.protocol + "). Host the page on GitHub Pages or Cloudflare Pages.";
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(x => x.stop()); }
+      catch (e) { return e.name === "NotAllowedError" ? "The browser is blocking the microphone. Open the site settings next to the address bar, set Microphone to Allow, then reload."
+        : e.name === "NotFoundError" ? "No microphone was found on this device." : "Microphone problem: " + e.name; }
+    }
+    return "";
+  }
   function listen(target = "event", retried = false) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return setAdd({ phase: "error", msg: "Voice input isn't supported in this browser (Chrome or Safari work).", target });
+    if (!SR) return setAdd({ phase: "error", msg: "This browser has no speech recognition. Use Chrome (Android) or Safari (iPad)." + micDiag(), target });
     const r = new SR(); r.lang = "en-US"; r.interimResults = true; r.maxAlternatives = 1;
     let got = false;
     r.onaudiostart = () => { ADD.ready = true; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); };   // only now is it listening
@@ -364,13 +379,16 @@
     r.onerror = (e) => {
       if (e.error === "no-speech" && !retried) return;   // onend will try once more
       got = true;
-      const why = { "no-speech": "I didn't hear anything. Tap the mic and start talking right after “Speak now”.", "not-allowed": "The microphone is blocked. Allow it in the browser's site settings (the page needs https).",
-        "service-not-allowed": "The microphone is blocked. Allow it in the browser's site settings.", "audio-capture": "No microphone was found.", "network": "Voice input needs an internet connection." }[e.error];
-      setAdd({ phase: "error", msg: why || "Mic error: " + e.error });
+      const why = { "no-speech": "I didn't hear anything. Tap the mic and start talking right after “Speak now”.", "not-allowed": "The browser is blocking the microphone. Allow it in the site settings.",
+        "service-not-allowed": "Speech recognition is blocked on this device. Check the browser's microphone and voice settings.", "audio-capture": "No microphone was found.", "network": "Voice input needs an internet connection." }[e.error];
+      setAdd({ phase: "error", msg: (why || "Mic error: " + e.error) + micDiag() });
     };
     r.onend = () => { if (ADD.phase !== "listening") return; if (!got && !retried) return listen(target, true); setAdd({ phase: "idle" }); };
     ADD.ready = false; setAdd({ phase: "listening", target });
-    try { r.start(); } catch (e) { setAdd({ phase: "error", msg: "Mic error: " + e.message }); }
+    (retried ? Promise.resolve("") : micPreflight()).then(problem => {
+      if (problem) return setAdd({ phase: "error", msg: problem + micDiag() });
+      try { r.start(); } catch (e) { setAdd({ phase: "error", msg: "Mic error: " + e.message + micDiag() }); }
+    });
   }
   async function saveEvent() {
     setAdd({ phase: "saving" });
@@ -395,8 +413,9 @@
     else if (a === "plan-day") { const name = PICK; PICK = null; if (needDb()) return; await mealCall("/meal-plan", { date: d.date, name }); }
     else if (a === "plan-done") { if (!needDb()) await mealCall("/meals", { name: d.name, plan_id: d.id }); }
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
-    else if (a.startsWith("mz-")) { left = DWELL; mapAction(a); }      // 911 map zoom, pan, save default; also keeps the card on screen longer
-    else if (a === "pause") togglePause(); else if (a === "speak") speakCard();
+    else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
+    else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
+    else if (a === "pause") togglePause(); else if (a === "voice") nextVoice(); else if (a === "speak") speakCard();
     else if (a === "daily") toggleDaily();
   });
 
@@ -448,45 +467,78 @@
   /* ===== spoken suggestions (the browser's built-in text-to-speech: free, voice depends on the tablet) ===== */
   let PAUSED = false;
   function togglePause() { PAUSED = !PAUSED; const b = $("pauseBtn"); b.textContent = PAUSED ? "▶" : "⏸"; b.classList.toggle("on", PAUSED); b.title = PAUSED ? "Resume card rotation" : "Pause card rotation"; }
-  function fitMap() {      // fit the Tableau dashboard to the card width, then apply the zoom level
+  // 911 map: the whole dashboard fitted to the card width, or only the part you box in with "Select map area".
+  let MAPCROP = null; try { MAPCROP = JSON.parse(localStorage.getItem("map_crop") || "null"); } catch (e) {}
+  let MAPSEL = false, MAPG = { k: 1, left: 0, top: 0 }, drag = null;
+  function fitMap() {
     const m = document.querySelector(".card.show .map"), f = m && m.querySelector("iframe"); if (!f) return;
     const cw = m.clientWidth, ch = m.clientHeight; if (!cw || !ch) return;
-    const V = TABLEAU_VIEW, r = TABLEAU_CROP || { x: 0, y: 0, w: V.w, h: V.h }, z = MAP_ZOOMS[MAPZ.level], k = (cw / r.w) * z;
-    let left, top;
-    if (MAPZ.level === 0) { left = -r.x * k; top = -r.y * k; MAPZ.fx = r.x + r.w / 2; MAPZ.fy = r.y + ch / (2 * k); }
-    else { left = cw / 2 - MAPZ.fx * k; top = ch / 2 - MAPZ.fy * k; }
-    left = Math.min(0, Math.max(cw - V.w * k, left)); top = Math.min(0, Math.max(ch - V.h * k, top));
-    MAPZ.vw = cw / k; MAPZ.vh = ch / k;
-    // The iframe is 24px wider than the layout so any scrollbar sits in the clipped strip and never shows.
-    Object.assign(f.style, { position: "absolute", width: V.w + 24 + "px", height: V.h + "px", transformOrigin: "0 0", left: left + "px", top: top + "px", transform: `scale(${k})` });
-    m.querySelector(".mz b").textContent = MAPZ.level ? "×" + z : "Fit";
-    m.querySelectorAll(".mz .pan").forEach(b => { b.style.display = MAPZ.level ? "" : "none"; });
+    const V = TABLEAU_VIEW, r = (!MAPSEL && (MAPCROP || TABLEAU_CROP)) || null;
+    let k, left, top;
+    if (r) { k = Math.min(cw / r.w, ch / r.h); left = (cw - r.w * k) / 2 - r.x * k; top = (ch - r.h * k) / 2 - r.y * k; }   // just that region, enlarged to fit
+    else { k = cw / V.w; left = 0; top = 0; }                                                                               // whole dashboard, fitted to the width
+    MAPG = { k, left, top };
+    // The iframe is 24px wider than the layout so any scrollbar sits in a clipped strip and never shows.
+    Object.assign(f.style, { position: "absolute", width: V.w + 24 + "px", height: V.h + "px", transformOrigin: "0 0", left: left + "px", top: top + "px", transform: `scale(${k})`,
+      clipPath: r ? `inset(${r.y}px ${V.w + 24 - r.x - r.w}px ${V.h - r.y - r.h}px ${r.x}px)` : "none" });
+    m.classList.toggle("selecting", MAPSEL);
   }
-  const savedMapView = () => { try { return JSON.parse(localStorage.getItem("map_view") || "null"); } catch (e) { return null; } };
-  function mapAction(a) {
-    if (a === "mz-in") MAPZ.level = Math.min(MAP_ZOOMS.length - 1, MAPZ.level + 1);
-    else if (a === "mz-out") MAPZ.level = Math.max(0, MAPZ.level - 1);
-    else if (a === "mz-save") {   // remember this zoom and position on this tablet; it becomes the opening view
-      try { localStorage.setItem("map_view", JSON.stringify({ level: MAPZ.level, fx: Math.round(MAPZ.fx), fy: Math.round(MAPZ.fy) })); } catch (e) {}
-      const b = document.querySelector(".card.show .mz b"); if (b) { b.textContent = "Saved ✓"; setTimeout(fitMap, 1800); } return;
-    }
-    else if (a === "mz-home") Object.assign(MAPZ, savedMapView() || { level: 0 });
-    else { const s = 0.3; if (a === "mz-l") MAPZ.fx -= s * MAPZ.vw; if (a === "mz-r") MAPZ.fx += s * MAPZ.vw; if (a === "mz-u") MAPZ.fy -= s * MAPZ.vh; if (a === "mz-d") MAPZ.fy += s * MAPZ.vh; }
-    fitMap();
-  }
+  document.addEventListener("pointerdown", (e) => { const s = e.target.closest(".sel"); if (!s) return; const b = s.getBoundingClientRect();
+    drag = { s, x0: e.clientX - b.left, y0: e.clientY - b.top, x1: e.clientX - b.left, y1: e.clientY - b.top }; e.preventDefault(); });
+  document.addEventListener("pointermove", (e) => { if (!drag) return; const b = drag.s.getBoundingClientRect(); drag.x1 = e.clientX - b.left; drag.y1 = e.clientY - b.top;
+    Object.assign(drag.s.querySelector(".box").style, { display: "block", left: Math.min(drag.x0, drag.x1) + "px", top: Math.min(drag.y0, drag.y1) + "px", width: Math.abs(drag.x1 - drag.x0) + "px", height: Math.abs(drag.y1 - drag.y0) + "px" }); });
+  document.addEventListener("pointerup", () => { if (!drag) return; const d = drag, g = MAPG; drag = null; d.s.querySelector(".box").style.display = "none";
+    const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0); if (w < 40 || h < 40) return;   // too small: ignore
+    MAPCROP = { x: Math.round((x - g.left) / g.k), y: Math.round((y - g.top) / g.k), w: Math.round(w / g.k), h: Math.round(h / g.k) };
+    try { localStorage.setItem("map_crop", JSON.stringify(MAPCROP)); } catch (e) {} MAPSEL = false; hold = false; fitMap(); });
   window.addEventListener("resize", fitMap);
   let ARMED = false, DAILY = false, spokenDay = ""; try { DAILY = localStorage.getItem("daily_voice") === "1"; spokenDay = localStorage.getItem("spoken_day") || ""; } catch (e) {}
   const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+  // Turn screen text into something that sounds right when spoken: "⭐ 4.6" -> "4.6 stars", "$$" -> "moderately priced", "6 PM" -> "6 P M".
+  function speakable(t) {
+    const px = { "$": "inexpensive", "$$": "moderately priced", "$$$": "pricey", "$$$$": "very expensive" };
+    return String(t)
+      .replace(/⭐\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*⭐/g, (m, a, b) => (a || b) + " stars")
+      .replace(/(^|[\s,(])(\${1,4})(?=[\s,.)]|$)/g, (m, pre, s) => pre + px[s])
+      .replace(/(\d+)\s*°\s*F?/g, "$1 degrees").replace(/°/g, " degrees")
+      .replace(/(\d)\s*mph\b/gi, "$1 miles per hour").replace(/\bAQI\b/g, "air quality index").replace(/\bPM\s?2\.5\b/gi, "fine particles")
+      .replace(/(\d+)\s*min\b/g, "$1 minute")
+      .replace(/(\d{1,2}(?::\d{2})?)\s*([AaPp])(?:\.[Mm]\.|[Mm])(?![A-Za-z])/g, (m, n, ap) => n + " " + ap.toUpperCase() + " M")
+      .replace(/(\d+(?:\.\d+)?)\s*%/g, "$1 percent").replace(/&/g, " and ").replace(/×/g, " times ").replace(/[·—–|•]/g, ", ").replace(/→/g, " to ").replace(/…/g, ".")
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "")
+      .replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/\s+/g, " ").trim();
+  }
+  // Voices: prefer natural/neural/enhanced English ones, avoid the novelty and robotic ones; the 🗣 button cycles through them and remembers the choice.
+  const voiceScore = (v) => (/natural|neural|premium|enhanced|studio|wavenet/i.test(v.name) ? 50 : 0) + (/google|samantha|ava|allison|evan|nicky|zoe|serena|daniel|karen|moira|aaron/i.test(v.name) ? 10 : 0)
+    + (/en[-_]US/i.test(v.lang) ? 5 : 0) + (v.localService ? 0 : 3) - (/compact|espeak|fred|zarvox|whisper|bells|cellos|organ|boing|good news|bad news|bubbles|jester|superstar|trinoids|wobble|albert|hysterical|junior|ralph|kathy/i.test(v.name) ? 100 : 0);
+  const englishVoices = () => (("speechSynthesis" in window && speechSynthesis.getVoices()) || []).filter(v => /^en[-_]/i.test(v.lang)).sort((a, b) => voiceScore(b) - voiceScore(a));
+  function pickVoice() { const vs = englishVoices(); let n = ""; try { n = localStorage.getItem("voice_name") || ""; } catch (e) {} return vs.find(v => v.name === n) || vs[0] || null; }
+  if ("speechSynthesis" in window) speechSynthesis.getVoices();      // some browsers load the voice list lazily
   function speak(text) {
     if (!text || !("speechSynthesis" in window)) return false;
-    speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95; speechSynthesis.speak(u); return true;
+    speechSynthesis.cancel();
+    const v = pickVoice(), chunks = speakable(text).match(/.+?(?:[.!?](?=\s|$)|$)/g) || [];   // one sentence at a time: natural pauses, and long speech doesn't get cut off
+    chunks.map(s => s.trim()).filter(Boolean).forEach(s => { const u = new SpeechSynthesisUtterance(s); if (v) { u.voice = v; u.lang = v.lang; } else u.lang = "en-US"; u.rate = 0.92; u.pitch = 1; speechSynthesis.speak(u); });
+    return true;
   }
-  function sayFor(id) {
+  function nextVoice() {
+    const vs = englishVoices(); if (!vs.length) return speak("No other voices were found on this device.");
+    const v = vs[(vs.indexOf(pickVoice()) + 1) % vs.length]; try { localStorage.setItem("voice_name", v.name); } catch (e) {}
+    speak(`Voice ${vs.indexOf(v) + 1} of ${vs.length}: ${v.name.replace(/^(Microsoft|Google)\s+/, "").replace(/\s*\(.*\)/, "").replace(/\s+Online$/, "")}. Tonight's plan is lasagna.`);
+  }
+  const dayWord = (d) => { const n = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - addDays(new Date(), 0)) / 864e5); return n === 0 ? "today" : n === 1 ? "tomorrow" : "on " + d.toLocaleDateString("en-US", { weekday: "long" }); };
+  function sayFor(id) {       // what each card says out loud, written like speech rather than read off the screen
     if (id === "kitchen") { const p = MEALS.plan.find(x => x.planned_for === ymd(new Date())), g = MEALS.gaps.slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`);
       return (p ? `Tonight's plan is ${p.name}. ` : "Nothing is planned for tonight. ") + (g.length ? `You haven't had ${g.join(", or ")}. Want to plan one?` : ""); }
-    if (id === "headsup") return HEADS.list.length ? "Heads up. " + HEADS.list.slice(0, 3).map(c => `${c.headline}. ${c.body || ""}`).join(" ") : "Nothing needs your attention.";
-    if (id === "events") { const e = EV.list[0]; return e ? `Next up: ${e.what}, ${e.time}.` : "No upcoming events."; }
-    if (id === "weather") return WX.state === "ok" ? `It's ${WX.temp} degrees and ${WX.desc.toLowerCase()}. ${WX.tip}` : "";
+    if (id === "headsup") return HEADS.list.length ? "Heads up. " + HEADS.list.slice(0, 3).map(c => `${c.headline}, ${(c.body || "").toLowerCase()}.`).join(" ") : "Nothing needs your attention.";
+    if (id === "events") { const l = EV.list.slice(0, 2).map(e => `${e.what} ${dayWord(e.date)}${e.time === "All day" ? ", all day" : " at " + e.time}`); return l.length ? "Coming up: " + l.join(". Then ") + "." : "Nothing is coming up."; }
+    if (id === "weather") return WX.state !== "ok" ? "The weather isn't available right now." : `It's ${WX.temp} degrees and ${WX.desc.toLowerCase()}, feels like ${WX.feels}. The high is ${WX.hi}, the low is ${WX.lo}. ${WX.tip}` + (WX.air ? ` Air quality is ${WX.air.label.toLowerCase()}.` : "");
+    if (id === "eatout") { const price = { "$": "inexpensive", "$$": "moderately priced", "$$$": "pricey", "$$$$": "very expensive" };
+      return "Tonight's ideas. " + EAT.places.map(p => { const stars = (String(p.rating || "").match(/\d+(?:\.\d+)?/) || [""])[0];
+        return [[p.name, p.kind, price[p.price], stars && `rated ${stars} stars`, p.walk, p.hours && p.hours.toLowerCase()].filter(Boolean).join(", ") + ".", p.dish && `Try the ${p.dish}.`, p.why && (/[.!?]$/.test(p.why) ? p.why : p.why + ".")].filter(Boolean).join(" "); }).join(" Or, ") ; }
+    if (id === "shop") return `You need ${plural(DUMMY.shopping.length, "thing")}: ` + DUMMY.shopping.map(i => i[3] || i[0]).join(", ") + ".";
+    if (id === "money") { const m = DUMMY.money, spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), hot = m.cats.filter(c => c[1] / c[2] >= 0.8).map(c => c[0]);
+      return `You've used ${Math.round(spent / bud * 100)} percent of this month's budget, and ${m.elapsed} percent of the month has passed.` + (hot.length ? ` ${hot.join(" and ")} ${hot.length > 1 ? "are" : "is"} running high.` : ""); }
     return "";
   }
   function cardText() {   // whatever is written on the current card, minus buttons and decoration
@@ -494,8 +546,9 @@
     const c = el.cloneNode(true); c.querySelectorAll("button, .tag, .hi, .addbar, .mz, iframe, .dow, .tab").forEach(n => n.remove());
     return c.innerHTML.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&[a-z]+;/g, " ").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim().slice(0, 500);
   }
-  const speakCard = () => { const id = CARDS[cur].id, text = id === "safety" ? "" : sayFor(id) || cardText();
-    speak(text || (id === "safety" ? "The 911 map is a picture, so I can't read it aloud." : "There is nothing to read on this card.")); };
+  const speakCard = () => { const id = CARDS[cur].id, el = cards()[cur], sample = !!(el && el.querySelector(".tag.draft"));
+    const text = id === "safety" ? "" : sayFor(id) || cardText();
+    speak(text ? (sample ? "This card shows sample data. " : "") + text : id === "safety" ? "The 911 map is a picture, so I can't read it aloud." : "There is nothing to read on this card."); };
   function toggleDaily() {
     DAILY = !DAILY; try { localStorage.setItem("daily_voice", DAILY ? "1" : "0"); } catch (e) {}
     $("dailyBtn").classList.toggle("on", DAILY); if (DAILY) speak("Daily suggestions are on. I'll read them at five p.m.");
@@ -607,7 +660,7 @@
     dailyVoice(d); if (!hold && !PAUSED) left -= 1; $("prog").style.width = ((DWELL - left) / DWELL * 100) + "%";
     if (left <= 0) go(cur + 1);
   }
-  $("dailyBtn").classList.toggle("on", DAILY); Object.assign(MAPZ, savedMapView() || {});
+  $("dailyBtn").classList.toggle("on", DAILY); 
   go(0); tick(); setInterval(tick, 1000);
   loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
   loadEatOut(); setInterval(() => loadEatOut(), 6 * 60 * 60 * 1000);   // reuses the saved picks unless they're 12 h old
