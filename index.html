@@ -158,6 +158,8 @@
   .map.selecting .sel { display: block; }
   .sel .hint { position: absolute; left: 50%; top: 1rem; transform: translateX(-50%); background: #ffb300; color: #201500; padding: .4rem 1rem; border-radius: 999px; font-weight: 700; pointer-events: none; }
   .sel .box { display: none; position: absolute; border: 2px dashed #ffb300; background: rgba(255,179,0,.18); }
+  .mz { top: .3rem; right: .3rem; padding: .15rem; gap: .15rem; opacity: .6; }
+  .mz button { width: 1.6rem; height: 1.6rem; padding: 0; border-radius: 50%; font-size: .8rem; line-height: 1; }
 </style>
 </head>
 <body>
@@ -303,7 +305,7 @@
     { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", keep: true, render: () => `
       <h2>911 · Downtown &amp; North Loop · live <span class="tag">City of Minneapolis</span></h2>
       <div class="map" style="flex:1"><iframe src="${esc(TABLEAU_URL)}" scrolling="no" allowfullscreen></iframe>
-        <div class="mz"><button data-act="map-select">✂️ Select map area</button><button data-act="map-reset">⌂ Whole dashboard</button></div>
+        <div class="mz"><button data-act="map-select" title="Select map area">✂️</button><button data-act="map-reset" title="Whole dashboard">⌂</button></div>
         <div class="sel"><div class="hint">Drag a box around the map</div><div class="box"></div></div></div>` },
   ];
 
@@ -358,16 +360,32 @@
     } catch (e) { console.warn("calendar:", e.message || e); }   // keep sample / last good list
     refreshCard("events");
   }
-  function setAdd(o) { Object.assign(ADD, o); hold = ["listening", "confirm", "saving"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
-  const micDiag = () => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}]`;
+  function setAdd(o) { Object.assign(ADD, o); hold = ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
+  const micDiag = (code) => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}${code ? ", code: " + code : ""}]`;
   async function micPreflight() {      // ask for the microphone explicitly so a permission problem is reported clearly
     if (!window.isSecureContext) return "The microphone only works on https pages (this one is " + location.protocol + "). Host the page on GitHub Pages or Cloudflare Pages.";
+    try { const st = (await navigator.permissions.query({ name: "microphone" })).state;       // already allowed: don't grab the mic a second time
+      if (st === "granted") return "";
+      if (st === "denied") return "The browser is blocking the microphone. Open the site settings next to the address bar, set Microphone to Allow, then reload.";
+    } catch (e) {}
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach(x => x.stop()); }
       catch (e) { return e.name === "NotAllowedError" ? "The browser is blocking the microphone. Open the site settings next to the address bar, set Microphone to Allow, then reload."
         : e.name === "NotFoundError" ? "No microphone was found on this device." : "Microphone problem: " + e.name; }
     }
     return "";
+  }
+  const MIC_TEST_MS = 5000;
+  async function micTest(target) {       // shows a live level for 5 seconds: tells "mic is silent" apart from "speech service is failing"
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser(), buf = new Uint8Array(512); an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
+      let peak = 0; const end = Date.now() + MIC_TEST_MS;
+      await new Promise(res => { const tick = () => { an.getByteTimeDomainData(buf); let m = 0; buf.forEach(v => { m = Math.max(m, Math.abs(v - 128)); }); peak = Math.max(peak, m);
+        setAdd({ phase: "testing", target, msg: "🎚 Say something… " + "▮".repeat(Math.min(24, Math.round(m / 2))) }); if (Date.now() < end) setTimeout(tick, 120); else res(); }; tick(); });
+      stream.getTracks().forEach(x => x.stop()); ctx.close();
+      setAdd({ phase: "error", target, msg: peak > 12 ? "The microphone works (it heard you), so the browser's speech service is what's failing. Check the tablet is online, and try Chrome." : "The microphone is silent. In the tablet's Settings → Apps → this browser → Permissions, allow Microphone, and make sure no other app is using it." });
+    } catch (e) { setAdd({ phase: "error", target, msg: "Can't open the microphone: " + e.name }); }
   }
   function listen(target = "event", retried = false) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -381,12 +399,13 @@
       got = true;
       const why = { "no-speech": "I didn't hear anything. Tap the mic and start talking right after “Speak now”.", "not-allowed": "The browser is blocking the microphone. Allow it in the site settings.",
         "service-not-allowed": "Speech recognition is blocked on this device. Check the browser's microphone and voice settings.", "audio-capture": "No microphone was found.", "network": "Voice input needs an internet connection." }[e.error];
-      setAdd({ phase: "error", msg: (why || "Mic error: " + e.error) + micDiag() });
+      setAdd({ phase: "error", msg: (why || "Mic error: " + e.error) + micDiag(e.error) });
     };
-    r.onend = () => { if (ADD.phase !== "listening") return; if (!got && !retried) return listen(target, true); setAdd({ phase: "idle" }); };
+    r.onend = () => { if (ADD.phase !== "listening") return; if (!got && !retried) return listen(target, true); setAdd({ phase: "error", msg: "I couldn't make out any speech." + micDiag("ended") }); };
     ADD.ready = false; setAdd({ phase: "listening", target });
-    (retried ? Promise.resolve("") : micPreflight()).then(problem => {
+    (retried ? Promise.resolve("") : micPreflight()).then(async problem => {
       if (problem) return setAdd({ phase: "error", msg: problem + micDiag() });
+      if (!retried) await new Promise(x => setTimeout(x, 350));      // let the browser release the mic before speech recognition takes it
       try { r.start(); } catch (e) { setAdd({ phase: "error", msg: "Mic error: " + e.message + micDiag() }); }
     });
   }
@@ -415,7 +434,7 @@
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
-    else if (a === "pause") togglePause(); else if (a === "voice") nextVoice(); else if (a === "speak") speakCard();
+    else if (a === "pause") togglePause(); else if (a === "mic-test") micTest(ADD.target); else if (a === "voice") nextVoice(); else if (a === "speak") speakCard();
     else if (a === "daily") toggleDaily();
   });
 
@@ -455,7 +474,7 @@
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
     : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna” or “plan lasagna for Friday”" : "“Dinner with Anna Friday at 7pm”")
     : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="no">Cancel</button>`
-    : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="no">OK</button>';
+    : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="no">OK</button>';
 
   /* ===== heads-up cards (from the database via the Worker) ===== */
   let HEADS = { state: "sample", list: DUMMY.heads };
