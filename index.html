@@ -391,7 +391,52 @@
         : "The microphone is silent. On a computer, pick the right input in the browser's microphone setting (the icon in the address bar) and in the system sound settings, and check it isn't muted. On a tablet, check Settings → Apps → this browser → Permissions → Microphone, and that no other app is using it.") + info });
     } catch (e) { setAdd({ phase: "error", target, msg: "Can't open the microphone: " + e.name }); }
   }
+  // ---- Cloud voice: record in the browser (works even where the browser's speech service doesn't), transcribe in the Worker ----
+  const micMode = () => { try { return localStorage.getItem("mic_mode") || "cloud"; } catch (e) { return "cloud"; } };
+  let micStop = false;
+  function wavFromAudioBuffer(ab) {        // 16-bit mono PCM WAV
+    const x = ab.getChannelData(0), n = x.length, b = new DataView(new ArrayBuffer(44 + n * 2)), s = (o, str) => { for (let i = 0; i < str.length; i++) b.setUint8(o + i, str.charCodeAt(i)); };
+    s(0, "RIFF"); b.setUint32(4, 36 + n * 2, true); s(8, "WAVEfmt "); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+    b.setUint32(24, ab.sampleRate, true); b.setUint32(28, ab.sampleRate * 2, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); s(36, "data"); b.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 0x7fff, true);
+    return new Blob([b], { type: "audio/wav" });
+  }
+  async function toWav16k(blob) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)(), decoded = await ctx.decodeAudioData(await blob.arrayBuffer()); ctx.close();
+    const off = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, Math.max(1, Math.ceil(decoded.duration * 16000)), 16000), src = off.createBufferSource();
+    src.buffer = decoded; src.connect(off.destination); src.start();
+    return wavFromAudioBuffer(await off.startRendering());
+  }
+  async function cloudListen(target) {
+    micStop = false; ADD.ready = false; setAdd({ phase: "listening", target });
+    let stream, ctx;
+    try {
+      if (!window.isSecureContext || !navigator.mediaDevices || !window.MediaRecorder) throw new Error("This browser can't record audio here (needs https and MediaRecorder).");
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ctx = new (window.AudioContext || window.webkitAudioContext)(); try { await ctx.resume(); } catch (e) {}
+      const an = ctx.createAnalyser(), buf = new Uint8Array(512), chunks = []; an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
+      const rec = new MediaRecorder(stream), stopped = new Promise(res => { rec.onstop = res; }); rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.start(); ADD.ready = true; refreshCard(ADD.target === "meal" ? "kitchen" : "events");
+      const t0 = Date.now(); let spoke = false, last = 0;
+      await new Promise(res => { const tick = () => { an.getByteTimeDomainData(buf); let m = 0; buf.forEach(v => { m = Math.max(m, Math.abs(v - 128)); }); const now = Date.now();
+        if (m >= 10) { spoke = true; last = now; }                         // stops by itself 1.3 s after you stop talking
+        if (micStop || ADD.phase !== "listening" || (spoke && now - last > 1300) || now - t0 > (spoke ? 10000 : 6000)) return res(); setTimeout(tick, 80); }; tick(); });
+      rec.stop(); await stopped; stream.getTracks().forEach(x => x.stop()); ctx.close(); stream = null;
+      if (ADD.phase !== "listening") return;                              // cancelled
+      if (!spoke) return setAdd({ phase: "error", target, msg: "I didn't hear anything. Tap 🎤 and speak right after “Speak now”." });
+      setAdd({ phase: "testing", target, msg: "⏳ Transcribing…" });
+      const wav = await toWav16k(new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
+      const r = await fetch(WORKER_URL + "/transcribe", { method: "POST", headers: { "content-type": "audio/wav", "X-Hub-Secret": hubKey() }, body: wav }), j = await r.json();
+      if (!r.ok || j.error) throw new Error(j.message || r.status);
+      if (!j.text) return setAdd({ phase: "error", target, msg: "I couldn't make out any words. Try again a little louder." });
+      setAdd({ phase: "confirm", target, text: j.text });
+    } catch (e) {
+      if (stream) stream.getTracks().forEach(x => x.stop()); if (ctx) { try { ctx.close(); } catch (x) {} }
+      setAdd({ phase: "error", target, msg: "Cloud voice failed: " + (e.message || e) });
+    }
+  }
   function listen(target = "event", retried = false) {
+    if (micMode() === "cloud") return cloudListen(target);
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return setAdd({ phase: "error", msg: "This browser has no speech recognition. Use Chrome (Android) or Safari (iPad)." + micDiag(), target });
     const r = new SR(); r.lang = "en-US"; r.interimResults = true; r.maxAlternatives = 1;
@@ -438,7 +483,8 @@
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
-    else if (a === "pause") togglePause(); else if (a === "mic-test") micTest(ADD.target); else if (a === "voice") nextVoice(); else if (a === "speak") speakCard();
+    else if (a === "pause") togglePause(); else if (a === "mic-test") micTest(ADD.target); else if (a === "mic-done") micStop = true;
+    else if (a === "mic-mode") { try { localStorage.setItem("mic_mode", micMode() === "cloud" ? "browser" : "cloud"); } catch (e) {} setAdd({ phase: "idle" }); } else if (a === "voice") nextVoice(); else if (a === "speak") speakCard();
     else if (a === "daily") toggleDaily();
   });
 
@@ -476,9 +522,9 @@
   }
   // One status bar for both voice flows (calendar events and meals).
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
-    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna” or “plan lasagna for Friday”" : "“Dinner with Anna Friday at 7pm”")
+    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna” or “plan lasagna for Friday”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
     : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="no">Cancel</button>`
-    : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="no">OK</button>';
+    : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="mic-mode">' + (micMode() === "cloud" ? "Try browser voice" : "Use cloud voice") + '</button><button class="addbtn" data-act="no">OK</button>';
 
   /* ===== heads-up cards (from the database via the Worker) ===== */
   let HEADS = { state: "sample", list: DUMMY.heads };

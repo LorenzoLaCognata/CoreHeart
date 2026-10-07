@@ -16,6 +16,8 @@
 //   GET /cards    the tablet's heads-up feed (core_card). Refreshed from the database at most
 //                 every 3 hours when asked, and by a cron trigger if you add one (optional).
 //   POST /cards/refresh   force a refresh now.
+//   POST /transcribe   (body: WAV audio) speech to text with Cloudflare Workers AI (Whisper).
+//                 Needs a Workers AI binding named AI on this Worker.
 //   GET /health   diagnostic check of Claude + Supabase. Fails LOUD on
 //                 purpose (real status codes, real error messages) and is
 //                 never cached, so you can actually tell what's broken.
@@ -67,6 +69,7 @@ export default {
 
     if (url.pathname === "/events" && request.method === "GET") return handleEvents(env, allowedOrigin);
     if (url.pathname === "/events/quick" && request.method === "POST") return handleQuickAdd(request, env, allowedOrigin);
+    if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
     if (url.pathname === "/meals" && request.method === "GET") return handleMeals(env, allowedOrigin);
     if (request.method === "POST" && ["/meals", "/meal-plan", "/meal-plan/remove"].includes(url.pathname)) return handleMealWrite(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/cards" && request.method === "GET") return handleCards(env, allowedOrigin, false);
@@ -254,6 +257,19 @@ async function handleCards(env, allowedOrigin, force) {
     const now = encodeURIComponent(new Date().toISOString());
     const cards = await sb(env, `core_card?select=id,domain,kind,headline,body,icon,priority&or=(expires_at.is.null,expires_at.gt.${now})&order=priority.desc&limit=8`);
     return jsonResponse({ cards }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
+  }
+}
+
+// ---- Voice input without the browser's speech service: the tablet records, this Worker transcribes ----
+async function handleTranscribe(request, env, allowedOrigin) {
+  try {
+    if (!env.AI) throw new Error("Cloud voice isn't set up yet: add a Workers AI binding named AI to this Worker.");
+    const audio = await request.arrayBuffer();
+    if (!audio.byteLength || audio.byteLength > 2_000_000) throw new Error("The recording was empty or too long.");
+    const out = await env.AI.run("@cf/openai/whisper", { audio: [...new Uint8Array(audio)] });
+    return jsonResponse({ text: String(out.text || "").trim() }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
   }
