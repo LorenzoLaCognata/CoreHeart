@@ -136,7 +136,7 @@
   .card:has(.tag.draft) { border: 2px dashed rgba(255,179,0,.55); }
   .card:has(.tag.draft)::after { content: "✏️ DRAFT"; position: absolute; right: -3.4rem; bottom: 2.2rem; transform: rotate(-35deg); background: #ffb300; color: #201500;
     font-weight: 800; letter-spacing: .12em; font-size: .8rem; padding: .3rem 3.6rem; pointer-events: none; opacity: .92; }
-  .addbar { margin-top: auto; padding-top: 1rem; display: flex; align-items: center; gap: 1rem; font-size: 1.1rem; color: var(--dim); }
+  .addbar { margin-top: auto; padding-top: 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; font-size: 1.1rem; line-height: 1.35; color: var(--dim); }
   .addbtn { padding: .8rem 1.4rem; border-radius: 999px; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); font-size: 1.1rem; }
   .addbtn.go { background: var(--accent); color: #0b0c10; font-weight: 700; }
 
@@ -376,15 +376,19 @@
     return "";
   }
   const MIC_TEST_MS = 5000;
-  async function micTest(target) {       // shows a live level for 5 seconds: tells "mic is silent" apart from "speech service is failing"
+  async function micTest(target) {       // live level for 5 seconds: tells "mic is silent" apart from "speech service is failing", and names the microphone in use
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser(), buf = new Uint8Array(512); an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }), track = stream.getAudioTracks()[0] || {};
+      const ctx = new (window.AudioContext || window.webkitAudioContext)(), an = ctx.createAnalyser(), buf = new Uint8Array(512); an.fftSize = 512;
+      try { await ctx.resume(); } catch (e) {}                                  // a suspended audio context reads as silence
+      ctx.createMediaStreamSource(stream).connect(an);
       let peak = 0; const end = Date.now() + MIC_TEST_MS;
       await new Promise(res => { const tick = () => { an.getByteTimeDomainData(buf); let m = 0; buf.forEach(v => { m = Math.max(m, Math.abs(v - 128)); }); peak = Math.max(peak, m);
-        setAdd({ phase: "testing", target, msg: "🎚 Say something… " + "▮".repeat(Math.min(24, Math.round(m / 2))) }); if (Date.now() < end) setTimeout(tick, 120); else res(); }; tick(); });
+        setAdd({ phase: "testing", target, msg: "🎚 Say something… " + "▮".repeat(Math.min(24, Math.round(m / 2))) + " (" + Math.round(m) + ")" }); if (Date.now() < end) setTimeout(tick, 120); else res(); }; tick(); });
+      const info = ` Microphone in use: “${track.label || "unknown"}”${track.muted ? " (the browser says it is muted)" : ""}. Loudest level heard: ${Math.round(peak)} (speech is normally 20 or more).`;
       stream.getTracks().forEach(x => x.stop()); ctx.close();
-      setAdd({ phase: "error", target, msg: peak > 12 ? "The microphone works (it heard you), so the browser's speech service is what's failing. Check the tablet is online, and try Chrome." : "The microphone is silent. In the tablet's Settings → Apps → this browser → Permissions, allow Microphone, and make sure no other app is using it." });
+      setAdd({ phase: "error", target, msg: (peak >= 6 ? "The microphone works, so the browser's speech service is what's failing. Check the device is online and try Chrome."
+        : "The microphone is silent. On a computer, pick the right input in the browser's microphone setting (the icon in the address bar) and in the system sound settings, and check it isn't muted. On a tablet, check Settings → Apps → this browser → Permissions → Microphone, and that no other app is using it.") + info });
     } catch (e) { setAdd({ phase: "error", target, msg: "Can't open the microphone: " + e.name }); }
   }
   function listen(target = "event", retried = false) {
