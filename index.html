@@ -160,6 +160,7 @@
   .sel .box { display: none; position: absolute; border: 2px dashed #ffb300; background: rgba(255,179,0,.18); }
   .mz { top: .3rem; right: .3rem; padding: .15rem; gap: .15rem; opacity: .6; }
   .mz button { width: 1.6rem; height: 1.6rem; padding: 0; border-radius: 50%; font-size: .8rem; line-height: 1; }
+  .ev[data-act] { cursor: pointer; } .ev.sel { outline: 2px solid var(--accent); }
 </style>
 </head>
 <body>
@@ -243,11 +244,13 @@
       for (let d = 1; d <= dim; d++) cells += `<div class="dy ${d === now.getDate() ? "today" : ""}">${d}${days.has(d) ? "<i></i>" : ""}</div>`;
       const sod = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()), lbl = (d) => { const n = Math.round((sod(d) - sod(now)) / 864e5);
         return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }); };
-      const bar = voiceBar(live ? '<button class="addbtn" data-act="add">🎤 Add event</button>' : "Connect Google Calendar to add events by voice.", "event");
+      const pe = EVPICK !== null ? EV.list[EVPICK] : null, busy = ADD.target === "event" && ADD.phase !== "idle";
+      const editor = pe ? `“${esc(pe.what)}” ${lbl(pe.date)}${pe.allDay ? "" : " " + pe.time}: <button class="addbtn" data-act="ev-shift" data-m="-1440">−1 day</button><button class="addbtn" data-act="ev-shift" data-m="1440">+1 day</button>${pe.allDay ? "" : '<button class="addbtn" data-act="ev-shift" data-m="-60">−1 h</button><button class="addbtn" data-act="ev-shift" data-m="60">+1 h</button>'}<button class="addbtn" data-act="ev-del">${EVDEL ? "Tap again to delete" : "🗑 Delete"}</button><button class="addbtn" data-act="ev-close">Close</button>` : "";
+      const bar = busy ? voiceBar("", "event") : editor || voiceBar(live ? '<button class="addbtn" data-act="add">🎤 Add or change an event</button> <span>or tap an event to edit it</span>' : "Connect Google Calendar to add or edit events.", "event");
       return `<h2>Calendar ${live ? '<span class="tag">Live · Google Calendar</span>' : tag()}</h2>
       <div style="display:grid;grid-template-columns:minmax(0,.9fr) 1.2fr;gap:2rem;flex:1;min-height:0">
         <div><div class="mon">${now.toLocaleDateString([], { month: "long", year: "numeric" })}</div><div class="cal">${cells}</div></div>
-        <div>${EV.list.slice(0, 5).map(e => `<div class="ev"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span></div>`).join("") || '<p class="sub">Nothing coming up.</p>'}</div>
+        <div>${EV.list.slice(0, 5).map((e, i) => `<div class="ev ${i === EVPICK ? "sel" : ""}" data-act="ev-pick" data-i="${i}"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span></div>`).join("") || '<p class="sub">Nothing coming up.</p>'}</div>
       </div>
       <div class="addbar">${bar}</div>`; } },
 
@@ -348,7 +351,8 @@
   const evEmoji = (t) => { t = t.toLowerCase(); return /dinner|lunch|brunch|restaurant/.test(t) ? "🍽️" : /birthday/.test(t) ? "🎂" : /flight|airport/.test(t) ? "✈️" : /movie|film/.test(t) ? "🎬" : /call|zoom/.test(t) ? "📞" : /meeting|work/.test(t) ? "💼" : /trash|recycl/.test(t) ? "♻️" : /market/.test(t) ? "🥕" : "📌"; };
   const tNow = new Date();
   let EV = { state: "sample", list: DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e })) };
-  const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false };
+  const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false, plan: null };
+  let EVPICK = null, EVDEL = false;      // the calendar entry being edited, and whether Delete was tapped once
   let hold = false;                                   // pauses card rotation while you're adding an event
   const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) { if (!(CARDS[cur].keep && el.innerHTML)) el.innerHTML = CARDS[cur].render(); fitMap(); } };
   async function loadEvents() {
@@ -356,11 +360,11 @@
       const j = await (await fetch(WORKER_URL + "/events", { headers: { "X-Hub-Secret": hubKey() } })).json();
       if (j.error || !Array.isArray(j.events)) throw new Error(j.message || "bad response");
       EV = { state: "ok", list: j.events.map(x => { const d = x.allDay ? new Date(x.start + "T00:00") : new Date(x.start);
-        return { date: d, time: x.allDay ? "All day" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), what: x.title, where: x.location, e: evEmoji(x.title) }; }) };
+        return { date: d, time: x.allDay ? "All day" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), what: x.title, where: x.location, e: evEmoji(x.title), id: x.id, allDay: x.allDay }; }) };
     } catch (e) { console.warn("calendar:", e.message || e); }   // keep sample / last good list
     refreshCard("events");
   }
-  function setAdd(o) { Object.assign(ADD, o); hold = ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
+  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
   const micDiag = (code) => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}${code ? ", code: " + code : ""}]`;
   async function micPreflight() {      // ask for the microphone explicitly so a permission problem is reported clearly
     if (!window.isSecureContext) return "The microphone only works on https pages (this one is " + location.protocol + "). Host the page on GitHub Pages or Cloudflare Pages.";
@@ -374,6 +378,12 @@
         : e.name === "NotFoundError" ? "No microphone was found on this device." : "Microphone problem: " + e.name; }
     }
     return "";
+  }
+  async function gotText(target, text) {      // events: Claude proposes the change (add, move, rename, delete); you confirm before anything happens
+    if (target !== "event" || EV.state !== "ok") return setAdd({ phase: "confirm", target, text, plan: null });
+    setAdd({ phase: "testing", target, text, msg: "⏳ Understanding…" });
+    let plan = null; try { plan = await api("/events/parse", "POST", { text }); } catch (e) { console.warn("parse:", e.message || e); }
+    if (ADD.phase === "testing") setAdd({ phase: "confirm", target, text, plan });
   }
   const MIC_TEST_MS = 5000;
   async function micTest(target) {       // live level for 5 seconds: tells "mic is silent" apart from "speech service is failing", and names the microphone in use
@@ -392,13 +402,20 @@
     } catch (e) { setAdd({ phase: "error", target, msg: "Can't open the microphone: " + e.name }); }
   }
   // ---- Cloud voice: record in the browser (works even where the browser's speech service doesn't), transcribe in the Worker ----
+  const VOICE_LANG = "en";               // "it" if you will mostly speak Italian
+  function voiceHint(target) {           // words the speech recognizer should expect: your meal names and event titles
+    const uniq = (a) => [...new Set(a.filter(Boolean))];
+    return (target === "meal" ? "We ate lasagna. Plan risotto for Friday. " + uniq([...MEALS.recent, ...MEALS.gaps, ...MEALS.plan].map(m => m.name)).slice(0, 14).join(", ")
+      : "Add dinner with Anna on Friday at 7 PM. Delete the farmers market. Move the haircut to Monday at 3 PM. Rename it to lunch. " + uniq(EV.list.map(e => e.what)).slice(0, 8).join(", ")).slice(0, 350);
+  }
   const micMode = () => { try { return localStorage.getItem("mic_mode") || "cloud"; } catch (e) { return "cloud"; } };
   let micStop = false;
   function wavFromAudioBuffer(ab) {        // 16-bit mono PCM WAV
     const x = ab.getChannelData(0), n = x.length, b = new DataView(new ArrayBuffer(44 + n * 2)), s = (o, str) => { for (let i = 0; i < str.length; i++) b.setUint8(o + i, str.charCodeAt(i)); };
     s(0, "RIFF"); b.setUint32(4, 36 + n * 2, true); s(8, "WAVEfmt "); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
     b.setUint32(24, ab.sampleRate, true); b.setUint32(28, ab.sampleRate * 2, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); s(36, "data"); b.setUint32(40, n * 2, true);
-    for (let i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 0x7fff, true);
+    let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(x[i])); const g = pk > 0.01 ? Math.min(8, 0.9 / pk) : 1;   // bring quiet voices up to a good level
+    for (let i = 0; i < n; i++) b.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i] * g)) * 0x7fff, true);
     return new Blob([b], { type: "audio/wav" });
   }
   async function toWav16k(blob) {
@@ -426,10 +443,10 @@
       if (!spoke) return setAdd({ phase: "error", target, msg: "I didn't hear anything. Tap 🎤 and speak right after “Speak now”." });
       setAdd({ phase: "testing", target, msg: "⏳ Transcribing…" });
       const wav = await toWav16k(new Blob(chunks, { type: rec.mimeType || "audio/webm" }));
-      const r = await fetch(WORKER_URL + "/transcribe", { method: "POST", headers: { "content-type": "audio/wav", "X-Hub-Secret": hubKey() }, body: wav }), j = await r.json();
+      const r = await fetch(WORKER_URL + "/transcribe?lang=" + VOICE_LANG + "&hint=" + encodeURIComponent(voiceHint(target)), { method: "POST", headers: { "content-type": "audio/wav", "X-Hub-Secret": hubKey() }, body: wav }), j = await r.json();
       if (!r.ok || j.error) throw new Error(j.message || r.status);
       if (!j.text) return setAdd({ phase: "error", target, msg: "I couldn't make out any words. Try again a little louder." });
-      setAdd({ phase: "confirm", target, text: j.text });
+      gotText(target, j.text);
     } catch (e) {
       if (stream) stream.getTracks().forEach(x => x.stop()); if (ctx) { try { ctx.close(); } catch (x) {} }
       setAdd({ phase: "error", target, msg: "Cloud voice failed: " + (e.message || e) });
@@ -442,7 +459,7 @@
     const r = new SR(); r.lang = "en-US"; r.interimResults = true; r.maxAlternatives = 1;
     let got = false;
     r.onaudiostart = () => { ADD.ready = true; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); };   // only now is it listening
-    r.onresult = (e) => { const x = e.results[e.results.length - 1]; if (x.isFinal) { got = true; setAdd({ phase: "confirm", text: x[0].transcript }); } };
+    r.onresult = (e) => { const x = e.results[e.results.length - 1]; if (x.isFinal) { got = true; gotText(target, x[0].transcript); } };
     r.onerror = (e) => {
       if (e.error === "no-speech" && !retried) return;   // onend will try once more
       got = true;
@@ -458,12 +475,19 @@
       try { r.start(); } catch (e) { setAdd({ phase: "error", msg: "Mic error: " + e.message + micDiag() }); }
     });
   }
+  async function evCall(path, body, okMsg) {
+    EVPICK = null; EVDEL = false; setAdd({ phase: "saving", target: "event" });
+    try { await api(path, "POST", body); setAdd({ phase: "done", msg: okMsg, target: "event" }); loadEvents(); setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 5000); }
+    catch (e) { setAdd({ phase: "error", msg: String(e.message || e), target: "event" }); }
+  }
   async function saveEvent() {
+    const p = ADD.plan && ADD.plan.action !== "none" ? ADD.plan : { action: "add", add_text: ADD.text, say: "Added “" + ADD.text + "”" };
     setAdd({ phase: "saving" });
     try {
-      const r = await fetch(WORKER_URL + "/events/quick", { method: "POST", headers: { "content-type": "application/json", "X-Hub-Secret": hubKey() }, body: JSON.stringify({ text: ADD.text }) });
-      const j = await r.json(); if (!r.ok || j.error) throw new Error(j.message || r.status);
-      setAdd({ phase: "done", msg: "Added: " + (j.title || ADD.text) }); loadEvents();
+      if (p.action === "delete") await api("/events/delete", "POST", { id: p.event_id });
+      else if (p.action === "move" || p.action === "rename") await api("/events/update", "POST", { id: p.event_id, start: p.new_start || undefined, title: p.action === "rename" ? p.new_title : undefined });
+      else { const j = await api("/events/quick", "POST", { text: p.add_text || ADD.text }); p.say = "Added: " + (j.title || ADD.text); }
+      EVPICK = null; setAdd({ phase: "done", msg: p.action === "add" ? p.say : "Done: " + String(p.say || "").replace(/\?$/, ""), plan: null }); loadEvents();
       setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
     } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
   }
@@ -483,7 +507,11 @@
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
-    else if (a === "pause") togglePause(); else if (a === "mic-test") micTest(ADD.target); else if (a === "mic-done") micStop = true;
+    else if (a === "pause") togglePause(); else if (a === "mic-test") micTest(ADD.target); else if (a === "mic-done") micStop = true; else if (a === "mic-again") listen(ADD.target);
+    else if (a === "ev-pick") { const e = EV.list[+d.i]; if (EV.state !== "ok" || !e || !e.id) setAdd({ phase: "error", msg: "Connect Google Calendar to edit events.", target: "event" }); else { if (ADD.target === "event" && (ADD.phase === "done" || ADD.phase === "error")) ADD.phase = "idle"; EVPICK = +d.i; EVDEL = false; hold = true; refreshCard("events"); } }
+    else if (a === "ev-close") { EVPICK = null; EVDEL = false; hold = false; refreshCard("events"); }
+    else if (a === "ev-shift") { const e = EV.list[EVPICK]; if (e) await evCall("/events/update", { id: e.id, shift_minutes: +d.m }, "Moved “" + e.what + "”"); }
+    else if (a === "ev-del") { const e = EV.list[EVPICK]; if (!e) return; if (!EVDEL) { EVDEL = true; refreshCard("events"); } else await evCall("/events/delete", { id: e.id }, "Deleted “" + e.what + "”"); }
     else if (a === "mic-mode") { try { localStorage.setItem("mic_mode", micMode() === "cloud" ? "browser" : "cloud"); } catch (e) {} setAdd({ phase: "idle" }); } else if (a === "voice") nextVoice(); else if (a === "speak") speakCard();
     else if (a === "daily") toggleDaily();
   });
@@ -498,14 +526,20 @@
     catch (e) { console.warn("meals:", e.message || e); }
     refreshCard("kitchen");
   }
+  const lev = (a, b) => { const m = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { let prev = m[0]; m[0] = i; for (let j = 1; j <= b.length; j++) { const tmp = m[j]; m[j] = Math.min(m[j] + 1, m[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; } } return m[b.length]; };
+  function snapMeal(n) {                 // "lazania" -> "Lasagna": snap to a meal you already log when it is a near match
+    const k = n.toLowerCase(); let best = n, bd = 99;
+    [...new Set([...MEALS.recent, ...MEALS.gaps, ...MEALS.plan].map(m => m.name))].forEach(name => { const d = lev(k, name.toLowerCase()); if (d < bd && d <= Math.max(1, Math.floor(name.length * 0.3))) { bd = d; best = name; } });
+    return best;
+  }
   const WD = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   function parseMeal(t) {
     t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     let m = t.match(/^(?:let'?s |we'?ll |we will )?(?:plan|have|cook|make)\s+(.+?)\s+(?:(?:for|on)\s+)?(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i);
     if (m) { const w = m[2].toLowerCase(), now = new Date(), n = w === "today" || w === "tonight" ? 0 : w === "tomorrow" ? 1 : ((WD.indexOf(w) - now.getDay() + 7) % 7 || 7);
-      return { action: "plan", name: cap(m[1]), date: ymd(addDays(now, n)), when: w }; }
+      return { action: "plan", name: snapMeal(cap(m[1])), date: ymd(addDays(now, n)), when: w }; }
     m = t.match(/^(?:we |i )?(?:ate|had|cooked|made)\s+(.+?)(?:\s+for\s+(breakfast|lunch|dinner))?$/i) || t.match(/^abbiamo\s+(?:mangiato|cucinato)\s+(.+)$/i);
-    if (m) return { action: "eat", name: cap(m[1]) };
+    if (m) return { action: "eat", name: snapMeal(cap(m[1])) };
     return null;
   }
   const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : `Log “${m.name}” as eaten at home`;
@@ -523,7 +557,8 @@
   // One status bar for both voice flows (calendar events and meals).
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
     : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna” or “plan lasagna for Friday”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
-    : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="no">Cancel</button>`
+    : ADD.phase === "confirm" && target === "event" && ADD.plan && ADD.plan.action === "none" ? "⚠ " + esc(ADD.plan.say || "I couldn't work out what to change.") + ' <button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>'
+    : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : ADD.plan && ADD.plan.say ? ADD.plan.say : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>`
     : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="mic-mode">' + (micMode() === "cloud" ? "Try browser voice" : "Use cloud voice") + '</button><button class="addbtn" data-act="no">OK</button>';
 
   /* ===== heads-up cards (from the database via the Worker) ===== */

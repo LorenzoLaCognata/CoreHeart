@@ -16,6 +16,8 @@
 //   GET /cards    the tablet's heads-up feed (core_card). Refreshed from the database at most
 //                 every 3 hours when asked, and by a cron trigger if you add one (optional).
 //   POST /cards/refresh   force a refresh now.
+//   POST /events/parse {text}    Claude turns a spoken calendar command into a proposed change (add/move/rename/delete); nothing is changed yet.
+//   POST /events/update {id, title?, start?, shift_minutes?}   POST /events/delete {id}
 //   POST /transcribe   (body: WAV audio) speech to text with Cloudflare Workers AI (Whisper).
 //                 Needs a Workers AI binding named AI on this Worker.
 //   GET /health   diagnostic check of Claude + Supabase. Fails LOUD on
@@ -69,6 +71,7 @@ export default {
 
     if (url.pathname === "/events" && request.method === "GET") return handleEvents(env, allowedOrigin);
     if (url.pathname === "/events/quick" && request.method === "POST") return handleQuickAdd(request, env, allowedOrigin);
+    if (request.method === "POST" && ["/events/parse", "/events/update", "/events/delete"].includes(url.pathname)) return handleEventEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
     if (url.pathname === "/meals" && request.method === "GET") return handleMeals(env, allowedOrigin);
     if (request.method === "POST" && ["/meals", "/meal-plan", "/meal-plan/remove"].includes(url.pathname)) return handleMealWrite(url.pathname, request, env, allowedOrigin);
@@ -263,13 +266,23 @@ async function handleCards(env, allowedOrigin, force) {
 }
 
 // ---- Voice input without the browser's speech service: the tablet records, this Worker transcribes ----
+function toBase64(bytes) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
 async function handleTranscribe(request, env, allowedOrigin) {
   try {
     if (!env.AI) throw new Error("Cloud voice isn't set up yet: add a Workers AI binding named AI to this Worker.");
     const audio = await request.arrayBuffer();
     if (!audio.byteLength || audio.byteLength > 2_000_000) throw new Error("The recording was empty or too long.");
-    const out = await env.AI.run("@cf/openai/whisper", { audio: [...new Uint8Array(audio)] });
-    return jsonResponse({ text: String(out.text || "").trim() }, 200, allowedOrigin);
+    const q = new URL(request.url).searchParams, lang = /^[a-z]{2}$/.test(q.get("lang") || "") ? q.get("lang") : "en", hint = (q.get("hint") || "").slice(0, 400);
+    const bytes = new Uint8Array(audio);
+    let text;
+    try {   // the larger Whisper model, told the language and the words to expect (meal names, event titles): much better with accents
+      const out = await env.AI.run("@cf/openai/whisper-large-v3-turbo", { audio: toBase64(bytes), language: lang, ...(hint ? { initial_prompt: hint } : {}) });
+      text = out.text;
+    } catch (e) {   // fall back to the smaller model if the larger one isn't available
+      const out = await env.AI.run("@cf/openai/whisper", { audio: [...bytes] });
+      text = out.text;
+    }
+    return jsonResponse({ text: String(text || "").trim() }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
   }
@@ -321,6 +334,73 @@ async function handleQuickAdd(request, env, allowedOrigin) {
   } catch (err) {
     return jsonResponse({ error: true, message: `Could not add event: ${err.message}` }, 200, allowedOrigin);
   }
+}
+
+// ---- Calendar: change or delete an existing event (by tap, or by voice through Claude) ----
+async function gcal(env, path, method = "GET", body) {
+  const tok = await googleToken(env);
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId(env)}/events${path}`, {
+    method, headers: { Authorization: `Bearer ${tok}`, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const text = await res.text(), j = text ? JSON.parse(text) : null;
+  if (!res.ok) throw new Error(j?.error?.message || res.status);
+  return j;
+}
+const isEventId = (s) => /^[A-Za-z0-9_-]{5,200}$/.test(s || "");
+const addDay = (dateStr, n) => new Date(Date.parse(dateStr + "T00:00:00Z") + n * 864e5).toISOString().slice(0, 10);
+
+async function handleEventEdit(path, request, env, allowedOrigin) {
+  try {
+    const b = await request.json();
+    if (path === "/events/parse") return jsonResponse(await parseEventCommand(b.text, env), 200, allowedOrigin);
+    if (!isEventId(b.id)) throw new Error("Bad event id.");
+    if (path === "/events/delete") { await gcal(env, "/" + b.id, "DELETE"); return jsonResponse({ ok: true }, 200, allowedOrigin); }
+    const ev = await gcal(env, "/" + b.id), allDay = !!ev.start?.date, patch = {};
+    if (typeof b.title === "string" && b.title.trim()) patch.summary = b.title.trim().slice(0, 120);
+    if (Number.isFinite(b.shift_minutes)) {                       // nudge: ±1 day or ±1 hour
+      const m = Math.round(b.shift_minutes);
+      if (allDay) { const d = Math.round(m / 1440); patch.start = { date: addDay(ev.start.date, d) }; patch.end = { date: addDay(ev.end.date, d) }; }
+      else { patch.start = { dateTime: new Date(Date.parse(ev.start.dateTime) + m * 60000).toISOString() }; patch.end = { dateTime: new Date(Date.parse(ev.end.dateTime) + m * 60000).toISOString() }; }
+    } else if (b.start) {                                         // exact new start, keeping the event's length
+      if (allDay) { if (!/^\d{4}-\d{2}-\d{2}/.test(b.start)) throw new Error("Need a date."); const s = b.start.slice(0, 10), span = Math.max(1, daysBetween(ev.end.date, ev.start.date)); patch.start = { date: s }; patch.end = { date: addDay(s, span) }; }
+      else { if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(b.start)) throw new Error("Need a date and a time for this event."); const dur = Date.parse(ev.end.dateTime) - Date.parse(ev.start.dateTime), local = b.start.slice(0, 16) + ":00";
+        patch.start = { dateTime: local, timeZone: HOME_TZ }; patch.end = { dateTime: new Date(Date.parse(local + "Z") + dur).toISOString().slice(0, 19), timeZone: HOME_TZ }; }
+    }
+    if (!Object.keys(patch).length) throw new Error("Nothing to change.");
+    await gcal(env, "/" + b.id, "PATCH", patch);
+    return jsonResponse({ ok: true }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
+  }
+}
+
+// Claude reads the spoken command next to the upcoming events and proposes ONE change. It never changes anything itself:
+// the tablet shows the proposal and only an explicit "Yes" calls update/delete, and only for an event id that is on the calendar.
+async function parseEventCommand(text, env) {
+  if (!text || text.length > 200) throw new Error("Missing or too-long text.");
+  const now = new Date();
+  const q = new URLSearchParams({ timeMin: now.toISOString(), timeMax: new Date(now.getTime() + 30 * 864e5).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "40" });
+  const list = await gcal(env, "?" + q);
+  const events = (list.items || []).filter((e) => e.status !== "cancelled").map((e) => ({ id: e.id, title: e.summary || "(no title)", start: e.start?.dateTime || e.start?.date, all_day: !!e.start?.date }));
+  const nowLocal = now.toLocaleString("sv-SE", { timeZone: HOME_TZ }).slice(0, 16).replace(" ", "T"), weekday = now.toLocaleDateString("en-US", { weekday: "long", timeZone: HOME_TZ });
+  const prompt = `You turn a spoken command about a household calendar into JSON. The text was transcribed from speech and may contain mishearings, so match event names loosely.
+Now (local time): ${nowLocal}, ${weekday}. Time zone: ${HOME_TZ}.
+Upcoming events: ${JSON.stringify(events)}
+Command: ${JSON.stringify(text)}
+Reply with ONLY this JSON, no markdown: {"action":"add|delete|move|rename|none","event_id":"id from the list (delete, move, rename)","new_start":"YYYY-MM-DDTHH:MM local, or YYYY-MM-DD for an all-day event; if only the day changes keep the event's original time of day","new_title":"for rename","add_text":"for add: the corrected sentence, e.g. Dinner with Anna Friday 7pm","say":"a short confirmation without a question mark, e.g. Move “Farmers market” to Saturday at 10 AM"}
+A new event is add. If the command refers to an event that is not in the list, or is unclear, use none and explain briefly in say.`;
+  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 400, messages: [{ role: "user", content: prompt }] }) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Claude API error (${res.status}): ${data?.error?.message || "unknown"}`);
+  const m = (data.content || []).map((c) => c.text || "").join("").match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("Could not understand that.");
+  const p = JSON.parse(m[0]), ids = new Set(events.map((e) => e.id));
+  const plan = { action: ["add", "delete", "move", "rename"].includes(p.action) ? p.action : "none", event_id: String(p.event_id || ""), new_start: String(p.new_start || ""), new_title: String(p.new_title || "").slice(0, 120), add_text: String(p.add_text || text).slice(0, 200), say: String(p.say || "").slice(0, 160) };
+  if (["delete", "move", "rename"].includes(plan.action) && !ids.has(plan.event_id)) return { action: "none", say: "I couldn't find that event on your calendar." };
+  if (plan.action === "move" && !/^\d{4}-\d{2}-\d{2}/.test(plan.new_start)) return { action: "none", say: "I didn't catch the new day or time." };
+  if (plan.action === "rename" && !plan.new_title) return { action: "none", say: "I didn't catch the new name." };
+  return plan;
 }
 
 // ---- Eat out card: Claude picks 2 places, using web search to check hours ----
