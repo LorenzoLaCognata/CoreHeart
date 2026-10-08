@@ -13,6 +13,8 @@
 //   GET /meals    recent meals (with days since), meals not had in a while, dinner plan.
 //   POST /meals {name, plan_id?}   log a meal eaten at home.
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
+//   POST /receipt {image: base64 JPEG}   Claude reads a grocery receipt photo: products, receipt lines, and pantry stock with expiry dates.
+//   GET /stock    what is in the house, soonest-to-expire first;  POST /stock/used {id | name}   mark something used up.
 //   POST /meal-idea {name}   save a meal idea (suggested until you cook it);  POST /meals/remove {id}   undo a logged meal.
 //   GET /cards    the tablet's heads-up feed (core_card). Refreshed from the database at most
 //                 every 3 hours when asked, and by a cron trigger if you add one (optional).
@@ -74,6 +76,9 @@ export default {
     if (url.pathname === "/events/quick" && request.method === "POST") return handleQuickAdd(request, env, allowedOrigin);
     if (request.method === "POST" && ["/events/parse", "/events/update", "/events/delete"].includes(url.pathname)) return handleEventEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
+    if (url.pathname === "/stock" && request.method === "GET") return handleStock(env, allowedOrigin);
+    if (url.pathname === "/stock/used" && request.method === "POST") return handleStockUsed(request, env, allowedOrigin);
+    if (url.pathname === "/receipt" && request.method === "POST") return handleReceipt(request, env, allowedOrigin);
     if (url.pathname === "/meals" && request.method === "GET") return handleMeals(env, allowedOrigin);
     if (request.method === "POST" && ["/meals", "/meals/remove", "/meal-plan", "/meal-plan/remove", "/meal-idea"].includes(url.pathname)) return handleMealWrite(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/cards" && request.method === "GET") return handleCards(env, allowedOrigin, false);
@@ -251,7 +256,7 @@ async function refreshCards(env) {
   const started = new Date().toISOString(), today = todayStr();
   const ICON = { core: "🔔", food: "🥬", home: "🏠" };
   const rows = await sb(env, "v_heads_up?select=*");
-  const cards = rows.map((r) => {
+  const cards = rows.filter((r) => !(r.source === "stock" && daysBetween(r.due_on, today) < -3)).map((r) => {
     const d = daysBetween(r.due_on, today);
     return { domain: r.domain, kind: r.source, dedupe_key: r.ref_id, headline: r.title, icon: ICON[r.domain] || "🔔", refreshed_at: started,
       body: d < 0 ? `${-d} day${d === -1 ? "" : "s"} overdue` : d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d} days`, priority: d < 0 ? 90 : d <= 7 ? 70 : 50 };
@@ -271,6 +276,99 @@ async function handleCards(env, allowedOrigin, force) {
     const now = encodeURIComponent(new Date().toISOString());
     const cards = await sb(env, `core_card?select=id,domain,kind,headline,body,icon,priority&or=(expires_at.is.null,expires_at.gt.${now})&order=priority.desc&limit=8`);
     return jsonResponse({ cards }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
+  }
+}
+
+// ---- Pantry: a receipt photo becomes products, receipt lines and stock with expiry dates ----
+const RECEIPT_MODEL = "claude-sonnet-5-5";      // reads receipts well; "claude-haiku-4-5-20251001" is cheaper but misreads more
+const FOOD_CATS = ["Produce", "Dairy & eggs", "Meat & fish", "Bakery", "Pantry", "Frozen", "Drinks", "Household"];
+
+async function handleReceipt(request, env, allowedOrigin) {
+  try {
+    const img = String((await request.json()).image || "");
+    if (!/^[A-Za-z0-9+/=]+$/.test(img) || img.length < 1000 || img.length > 6_000_000) throw new Error("The photo was missing or too large.");
+    const [products, cats] = await Promise.all([sb(env, "food_product?select=id,name,category_id,shelf_life_days&limit=1000"), sb(env, "food_category?select=id,name_en&limit=100")]);
+    const today = todayStr();
+    const prompt = `This is a photo of a grocery receipt. Read it and reply with ONLY this JSON, no markdown:
+{"store":"store name","purchased_on":"YYYY-MM-DD or empty","total":number or null,"items":[{"raw":"the line as printed","name":"clear product name in English, singular, no brand, e.g. Chicken breast","qty":number,"line_total":number,"category":"one of: ${FOOD_CATS.join(", ")}","is_food":true or false,"shelf_life_days":integer}]}
+shelf_life_days is how many days the product stays good after purchase when stored normally: leafy greens 4, most fresh produce 7, milk 8, yogurt 14, eggs 28, fresh meat or fish 2, bread 4, hard cheese 30, frozen food 90, canned or dry goods 365. Skip tax, totals, discounts, bag fees and payment lines.
+If a product matches one of these existing names, use exactly that name: ${products.slice(0, 200).map((p) => p.name).join("; ")}.
+Today is ${today}. If the image is not a receipt or is unreadable, reply {"error":"short reason"}.`;
+    const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: RECEIPT_MODEL, max_tokens: 3500, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: img } }, { type: "text", text: prompt }] }] }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`Claude API error (${res.status}): ${data?.error?.message || "unknown"}`);
+    const m = (data.content || []).map((c) => c.text || "").join("").match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("I couldn't read that receipt.");
+    const r = JSON.parse(m[0]);
+    if (r.error) throw new Error("I couldn't read that receipt: " + String(r.error).slice(0, 120));
+    const items = (Array.isArray(r.items) ? r.items : []).slice(0, 60).map((i) => ({
+      raw: String(i.raw || i.name || "").slice(0, 120), name: String(i.name || "").trim().slice(0, 80), qty: Math.max(0.001, Number(i.qty) || 1), line_total: Number(i.line_total) || 0,
+      category: FOOD_CATS.includes(i.category) ? i.category : "Pantry", is_food: i.is_food !== false && i.category !== "Household", shelf: Math.min(730, Math.max(1, Math.round(Number(i.shelf_life_days) || 7))) })).filter((i) => i.name);
+    if (!items.length) throw new Error("I couldn't find any items. Lay the whole receipt flat in good light and try again.");
+    const when = /^\d{4}-\d{2}-\d{2}$/.test(r.purchased_on || "") && r.purchased_on <= today ? r.purchased_on : today;
+    const total = Number(r.total) > 0 ? Number(r.total) : Math.round(items.reduce((a, i) => a + i.line_total, 0) * 100) / 100;
+    const store = String(r.store || "").trim().slice(0, 80);
+
+    // the same receipt scanned twice should not double the pantry
+    const dupe = await sb(env, `food_receipt?select=id&purchased_at=eq.${encodeURIComponent(when + "T12:00:00Z")}&total=eq.${total}&limit=1`);
+    if (dupe.length) return jsonResponse({ ok: true, duplicate: true, store }, 200, allowedOrigin);
+
+    let storeId = null;
+    if (store) {
+      const places = await sb(env, "core_place?select=id,name&kind=eq.store&limit=200");
+      let p = places.find((x) => x.name.toLowerCase() === store.toLowerCase());
+      if (!p) [p] = await sb(env, "core_place", { method: "POST", prefer: "return=representation", body: { name: store, kind: "store" } });
+      storeId = p.id;
+    }
+    const byName = new Map(products.map((p) => [p.name.toLowerCase(), p])), catId = new Map(cats.map((c) => [String(c.name_en || "").toLowerCase(), c.id])), fresh = [];
+    for (const i of items) if (!byName.has(i.name.toLowerCase()) && !fresh.some((f) => f.name.toLowerCase() === i.name.toLowerCase()))
+      fresh.push({ name: i.name, name_en: i.name, category_id: catId.get(i.category.toLowerCase()) || null, shelf_life_days: i.is_food ? i.shelf : null });
+    if (fresh.length) (await sb(env, "food_product", { method: "POST", prefer: "return=representation", body: fresh })).forEach((p) => byName.set(p.name.toLowerCase(), p));
+    const filled = new Set();      // products you made yourself may lack a category or shelf life: fill the gaps, never overwrite
+    for (const i of items) { const p = products.find((x) => x.name.toLowerCase() === i.name.toLowerCase()); if (!p || filled.has(p.id)) continue;
+      const patch = {}; if (p.shelf_life_days == null && i.is_food) patch.shelf_life_days = i.shelf; if (p.category_id == null && catId.get(i.category.toLowerCase())) patch.category_id = catId.get(i.category.toLowerCase());
+      if (Object.keys(patch).length) { filled.add(p.id); await sb(env, `food_product?id=eq.${p.id}`, { method: "PATCH", body: patch }); p.shelf_life_days = patch.shelf_life_days ?? p.shelf_life_days; } }
+    const [receipt] = await sb(env, "food_receipt", { method: "POST", prefer: "return=representation", body: { store_id: storeId, purchased_at: when + "T12:00:00Z", total } });
+    await sb(env, "food_receipt_line", { method: "POST", body: items.map((i) => ({ receipt_id: receipt.id, product_id: byName.get(i.name.toLowerCase()).id, raw_text: i.raw || i.name, qty: i.qty, line_total: i.line_total })) });
+    const stock = items.filter((i) => i.is_food).map((i) => { const p = byName.get(i.name.toLowerCase()); return { product_id: p.id, qty: i.qty, purchased_on: when, expires_on: addDay(when, p.shelf_life_days || i.shelf) }; });
+    if (stock.length) await sb(env, "food_stock", { method: "POST", body: stock });
+    lastCards = 0;
+    return jsonResponse({ ok: true, store, total, added: items.length, stocked: stock.length, soon: stock.filter((s) => daysBetween(s.expires_on, today) <= 7).length }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
+  }
+}
+
+// What is in the house, soonest to expire first. Anything more than 3 days past its date is assumed gone.
+async function loadStock(env) {
+  const rows = await sb(env, "food_stock?select=id,product_id,qty,expires_on&status=eq.in_stock&order=expires_on.asc&limit=150");
+  const ids = [...new Set(rows.map((r) => r.product_id))], today = todayStr();
+  const prods = ids.length ? await sb(env, `food_product?select=id,name&id=in.(${ids.join(",")})`) : [];
+  const name = new Map(prods.map((p) => [p.id, p.name]));
+  return rows.map((r) => ({ id: r.id, name: name.get(r.product_id) || "Item", qty: r.qty, expires_on: r.expires_on, days_left: r.expires_on ? daysBetween(r.expires_on, today) : null }))
+    .filter((r) => r.days_left === null || r.days_left >= -3);
+}
+async function handleStock(env, allowedOrigin) {
+  try { return jsonResponse({ items: await loadStock(env) }, 200, allowedOrigin); }
+  catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
+}
+async function handleStockUsed(request, env, allowedOrigin) {
+  try {
+    const b = await request.json(), items = await loadStock(env);
+    let item = null;
+    if (/^[0-9a-f-]{36}$/i.test(b.id || "")) item = items.find((i) => i.id === b.id);
+    else {      // by name, spoken: soonest-expiring item whose name contains (or is contained in) what was said
+      const n = String(b.name || "").toLowerCase().trim().replace(/s$/, "");
+      if (n) item = items.find((i) => { const x = i.name.toLowerCase(); return x.includes(n) || n.includes(x.replace(/s$/, "")); });
+    }
+    if (!item) throw new Error(`I couldn't find “${String(b.name || "that").slice(0, 40)}” in the pantry.`);
+    await sb(env, `food_stock?id=eq.${item.id}`, { method: "PATCH", body: { status: "used" } });
+    lastCards = 0;
+    return jsonResponse({ ok: true, matched: item.name }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
   }

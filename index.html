@@ -164,6 +164,7 @@
   .plan { grid-template-columns: repeat(7, 1fr); gap: .5rem; } .pd b { font-size: .9rem; } .pd .pic { width: 2.8rem; height: 2.8rem; font-size: 1.5rem; }
   .warnbox { margin: -.6rem 0 1rem; padding: .6rem 1rem; border-radius: 1rem; background: rgba(255,179,0,.12); border: 1px dashed #ffb300; color: #ffcc66; font-size: .95rem; line-height: 1.35; }
   .rm { background: none; border: 0; color: var(--dim); font-size: .9rem; padding: .1rem .4rem; margin-left: auto; }
+  .dimchip { opacity: .65; font-size: .95rem; padding: .4rem .9rem; }
 </style>
 </head>
 <body>
@@ -180,6 +181,7 @@
   <div class="bar" aria-hidden="true"><i id="prog"></i></div>
   <section class="stage" id="stage"></section>
 </main>
+<input type="file" id="rcpt" accept="image/*" capture="environment" hidden>
 
 <script>
   /* ===== DUMMY DATA — replace section by section =====
@@ -197,6 +199,7 @@
       gaps: [{ name: "Lasagna", days_since: 12 }, { name: "Frittata", days_since: 9 }, { name: "Pasta al limone", days_since: 8 }],
       plan: [{ off: 0, name: "Frittata di zucchine" }, { off: 2, name: "Pasta al limone" }],
     },
+    stock: [["Zucchini", 1], ["Ricotta", 2], ["Spinach", 3], ["Yogurt", 5], ["Chicken breast", 6], ["Pasta", 300], ["Rice", 200]],
     heads: [
       { icon: "🔔", headline: "Car service", body: "In 12 days" }, { icon: "🥬", headline: "Zucchine needs eating", body: "Tomorrow" },
       { icon: "🏠", headline: "Blender: warranty ends", body: "In 3 weeks" }, { icon: "🍽️", headline: "Lasagna: not had in 12 days", body: "Plan it this week?" },
@@ -230,6 +233,9 @@
   // Picture slot: pass an image URL later for real photos; until then a colored emoji tile.
   const pic = (e, bg, img) => img ? `<img class="pic" src="${esc(img)}" alt="">` : `<div class="pic" style="--bg:${bg || "var(--accent)"}">${e}</div>`;
   const CAT_BG = { Dairy: "#64b5f6", Bakery: "#ffb74d", Produce: "#9ccc65", Pantry: "#a1887f" };
+  const foodEmoji = (n) => { n = n.toLowerCase(); return /milk|yogurt|yoghurt|cream/.test(n) ? "🥛" : /egg/.test(n) ? "🥚" : /bread|bun|roll/.test(n) ? "🍞" : /chicken|turkey/.test(n) ? "🍗" : /beef|steak|pork|ham|sausage|bacon/.test(n) ? "🥩" : /fish|salmon|tuna|shrimp/.test(n) ? "🐟"
+    : /tomato/.test(n) ? "🍅" : /spinach|salad|lettuce|kale|greens|basil|herb/.test(n) ? "🥬" : /zucchini|cucumber/.test(n) ? "🥒" : /cheese|ricotta|mozzarella|parmesan|parmigiano/.test(n) ? "🧀" : /apple/.test(n) ? "🍎" : /banana/.test(n) ? "🍌"
+    : /pasta|spaghetti|noodle/.test(n) ? "🍝" : /rice/.test(n) ? "🍚" : /butter/.test(n) ? "🧈" : /potato/.test(n) ? "🥔" : /carrot/.test(n) ? "🥕" : /lemon|lime|orange/.test(n) ? "🍋" : "🥫"; };
   const cuisineEmoji = (p) => { const k = (p.kind || "").toLowerCase();
     return p.e || (/ital|pasta/.test(k) ? "🍝" : /ramen|noodle|japan/.test(k) ? "🍜" : /mex|taco/.test(k) ? "🌮" : /pizza/.test(k) ? "🍕" : /burger|americ/.test(k) ? "🍔" : /thai|india|curry/.test(k) ? "🍛" : /sushi/.test(k) ? "🍣" : "🍽️"); };
 
@@ -271,6 +277,22 @@
         <div><div class="sec">Suggestions · tap to plan</div><div class="chips" style="margin-top:.4rem">${MEALS.gaps.map(g => `<button class="chip gap" data-act="pick" data-name="${esc(g.name)}">${esc(g.name)} · ${g.idea ? "idea" : g.days_since + " days"}</button>`).join("") || '<span class="sub">Nothing to suggest yet. Say “add idea risotto”, or log what you ate.</span>'}</div></div>
         <div><div class="sec">We ate</div>${MEALS.recent.slice(0, 4).map(m => `<div class="row" style="font-size:1.05rem;padding:.45rem 0"><span class="k" style="width:7rem">${ago(m.days_since)}</span>${esc(m.name)}${m.id ? ` <button class="rm" data-act="meal-rm" data-id="${esc(m.id)}" title="Remove this entry">✕</button>` : ""}</div>`).join("") || '<span class="sub">Nothing logged yet. Say “we ate lasagna”.</span>'}</div>
       </div>
+      <div class="addbar">${bar}</div>`; } },
+
+    { id: "pantry", icon: "🥬", label: "Pantry", accent: "#9ccc65", render: () => {
+      const live = STOCK.state === "ok", soon = STOCK.items.filter(i => i.days_left !== null && i.days_left <= 7), rest = STOCK.items.filter(i => !soon.includes(i));
+      const when = (n) => n < 0 ? "expired" : n === 0 ? "today" : n === 1 ? "1 day" : n + " days", sel = STOCKPICK && STOCK.items.find(i => i.id === STOCKPICK);
+      const busy = ADD.target === "meal" && ADD.phase !== "idle";
+      const bar = busy ? voiceBar("", "meal") : sel ? `“${esc(sel.name)}”${sel.days_left === null ? "" : " (" + when(sel.days_left) + ")"}: <button class="addbtn go" data-act="stock-used" data-id="${esc(sel.id)}">✅ Used it up</button><button class="addbtn" data-act="stock-x">Cancel</button>`
+        : RCPT.phase === "reading" ? "📷 Reading the receipt… about 15 seconds" : RCPT.phase === "done" ? "✅ " + esc(RCPT.msg)
+        : RCPT.phase === "error" ? "⚠ " + esc(RCPT.msg) + ' <button class="addbtn" data-act="scan">Try again</button>'
+        : '<button class="addbtn" data-act="scan">📷 Scan a receipt</button><button class="addbtn" data-act="add-meal">🎤 Say what you used</button> <span>lay receipts flat in good light · “we finished the milk”</span>';
+      return `<h2>Pantry · ${STOCK.items.length} in the house ${live ? '<span class="tag">Live</span>' : tag()}</h2>
+      ${STOCK.err ? `<div class="warnbox">⚠ Can't read the pantry: ${esc(STOCK.err)} <button class="addbtn" data-act="stock-retry">Retry</button></div>` : ""}
+      <div class="sec">Use it up · tap when used</div>
+      <div class="chips" style="margin-top:.4rem">${soon.map(i => `<button class="chip ${i.days_left <= 2 ? "warn" : ""}" data-act="stock-pick" data-id="${esc(i.id)}">${foodEmoji(i.name)} ${esc(i.name)} · ${when(i.days_left)}</button>`).join("") || '<span class="sub">Nothing is about to expire.</span>'}</div>
+      <div class="sec" style="margin-top:1.3rem">Also in the house</div>
+      <div class="chips" style="margin-top:.4rem">${rest.slice(0, 24).map(i => `<button class="chip dimchip" data-act="stock-pick" data-id="${esc(i.id)}">${esc(i.name)}</button>`).join("") || '<span class="sub">Nothing else yet. Scan a receipt to fill the pantry.</span>'}</div>
       <div class="addbar">${bar}</div>`; } },
 
     { id: "shop", icon: "🛒", label: "Shopping", accent: "#4caf7d", render: () => `
@@ -358,6 +380,7 @@
   const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false, plan: null };
   let EVPICK = null, EVDEL = false;      // the calendar entry being edited, and whether Delete was tapped once
   let hold = false;                                   // pauses card rotation while you're adding an event
+  const refreshVoice = () => { if (ADD.target === "meal") { refreshCard("kitchen"); refreshCard("pantry"); } else refreshCard("events"); };   // meal voice commands work from Kitchen and Pantry
   const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) { if (!(CARDS[cur].keep && el.innerHTML)) el.innerHTML = CARDS[cur].render(); fitMap(); } };
   async function loadEvents() {
     try {
@@ -368,7 +391,7 @@
     } catch (e) { console.warn("calendar:", e.message || e); }   // keep sample / last good list
     refreshCard("events");
   }
-  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); }
+  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshVoice(); }
   const micDiag = (code) => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}${code ? ", code: " + code : ""}]`;
   async function micPreflight() {      // ask for the microphone explicitly so a permission problem is reported clearly
     if (!window.isSecureContext) return "The microphone only works on https pages (this one is " + location.protocol + "). Host the page on GitHub Pages or Cloudflare Pages.";
@@ -437,7 +460,7 @@
       ctx = new (window.AudioContext || window.webkitAudioContext)(); try { await ctx.resume(); } catch (e) {}
       const an = ctx.createAnalyser(), buf = new Uint8Array(512), chunks = []; an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an);
       const rec = new MediaRecorder(stream), stopped = new Promise(res => { rec.onstop = res; }); rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-      rec.start(); ADD.ready = true; refreshCard(ADD.target === "meal" ? "kitchen" : "events");
+      rec.start(); ADD.ready = true; refreshVoice();
       const t0 = Date.now(); let spoke = false, last = 0;
       await new Promise(res => { const tick = () => { an.getByteTimeDomainData(buf); let m = 0; buf.forEach(v => { m = Math.max(m, Math.abs(v - 128)); }); const now = Date.now();
         if (m >= 10) { spoke = true; last = now; }                         // stops by itself 1.3 s after you stop talking
@@ -462,7 +485,7 @@
     if (!SR) return setAdd({ phase: "error", msg: "This browser has no speech recognition. Use Chrome (Android) or Safari (iPad)." + micDiag(), target });
     const r = new SR(); r.lang = "en-US"; r.interimResults = true; r.maxAlternatives = 1;
     let got = false;
-    r.onaudiostart = () => { ADD.ready = true; refreshCard(ADD.target === "meal" ? "kitchen" : "events"); };   // only now is it listening
+    r.onaudiostart = () => { ADD.ready = true; refreshVoice(); };   // only now is it listening
     r.onresult = (e) => { const x = e.results[e.results.length - 1]; if (x.isFinal) { got = true; gotText(target, x[0].transcript); } };
     r.onerror = (e) => {
       if (e.error === "no-speech" && !retried) return;   // onend will try once more
@@ -510,6 +533,11 @@
     else if (a === "plan-done") { if (!needDb()) await mealCall("/meals", { name: d.name, plan_id: d.id }); }
     else if (a === "meal-rm") { if (!needDb()) await mealCall("/meals/remove", { id: d.id }); }
     else if (a === "meals-retry") loadMeals();
+    else if (a === "scan") { RCPT.phase = "idle"; $("rcpt").click(); }
+    else if (a === "stock-pick") { STOCKPICK = d.id; hold = true; refreshCard("pantry"); }
+    else if (a === "stock-x") { STOCKPICK = null; hold = false; refreshCard("pantry"); }
+    else if (a === "stock-retry") loadStock();
+    else if (a === "stock-used") { STOCKPICK = null; hold = false; if (STOCK.state !== "ok") { RCPT.phase = "error"; RCPT.msg = "Connect the database first."; refreshCard("pantry"); } else { try { await api("/stock/used", "POST", { id: d.id }); } catch (err) { STOCK.err = String(err.message || err); } await loadStock(); } }
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
@@ -543,6 +571,8 @@
     t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1), now = new Date(), DAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday";
     let m = t.match(/^(?:add |save |new |remember )?(?:a )?(?:meal )?idea[:,]?\s+(.+)$/i) || t.match(/^(?:add|save)\s+(.+?)\s+(?:to|as)\s+(?:my |our |the )?(?:meal )?ideas$/i);
     if (m) return { action: "idea", name: cap(m[1]) };
+    m = t.match(/^(?:we |i )?(?:used up|used|finished|ran out of|are out of|threw away|threw out|got rid of)\s+(?:the |our |all the |some )?(.+)$/i);
+    if (m) return { action: "used", name: m[1].trim() };
     m = t.match(new RegExp("^(?:let'?s |we'?ll |we will )?(?:plan|have|cook|make)\\s+(.+?)\\s+(?:(?:for|on)\\s+)?(today|tonight|tomorrow|" + DAYS + ")$", "i"));
     if (m) { const w = m[2].toLowerCase(), n = w === "today" || w === "tonight" ? 0 : w === "tomorrow" ? 1 : ((WD.indexOf(w) - now.getDay() + 7) % 7 || 7);
       return { action: "plan", name: snapMeal(cap(m[1])), date: ymd(addDays(now, n)), when: w }; }
@@ -553,7 +583,7 @@
       return { action: "eat", name: snapMeal(cap(m[1])), date: ymd(addDays(now, off)), off }; }
     return null;
   }
-  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "idea" ? `Save “${m.name}” as a meal idea`
+  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
     : `Log “${m.name}” as eaten at home${m.off ? (m.off === -1 ? " yesterday" : ` ${-m.off} days ago`) : ""}`;
   async function saveMeal() {
     const m = parseMeal(ADD.text);
@@ -561,7 +591,7 @@
     if (MEALS.state !== "ok") return setAdd({ phase: "error", msg: "Connect the database first (see the setup notes)." });
     setAdd({ phase: "saving" });
     try {
-      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else if (m.action === "idea") await api("/meal-idea", "POST", { name: m.name }); else await api("/meals", "POST", { name: m.name, eaten_on: m.date });
+      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else if (m.action === "idea") await api("/meal-idea", "POST", { name: m.name }); else if (m.action === "used") { const j = await api("/stock/used", "POST", { name: m.name }); m.name = j.matched || m.name; loadStock(); } else await api("/meals", "POST", { name: m.name, eaten_on: m.date });
       setAdd({ phase: "done", msg: mealSummary(m) }); loadMeals();
       setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
     } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
@@ -653,6 +683,8 @@
     if (id === "eatout") { const price = { "$": "inexpensive", "$$": "moderately priced", "$$$": "pricey", "$$$$": "very expensive" };
       return "Tonight's ideas. " + EAT.places.map(p => { const stars = (String(p.rating || "").match(/\d+(?:\.\d+)?/) || [""])[0];
         return [[p.name, p.kind, price[p.price], stars && `rated ${stars} stars`, p.walk, p.hours && p.hours.toLowerCase()].filter(Boolean).join(", ") + ".", p.dish && `Try the ${p.dish}.`, p.why && (/[.!?]$/.test(p.why) ? p.why : p.why + ".")].filter(Boolean).join(" "); }).join(" Or, ") ; }
+    if (id === "pantry") { const soon = STOCK.items.filter(i => i.days_left !== null && i.days_left <= 7).slice(0, 4).map(i => `${i.name} ${i.days_left <= 0 ? "today" : i.days_left === 1 ? "tomorrow" : "in " + i.days_left + " days"}`);
+      return soon.length ? "Use up soon: " + soon.join(", ") + "." : "Nothing in the pantry is about to expire."; }
     if (id === "shop") return `You need ${plural(DUMMY.shopping.length, "thing")}: ` + DUMMY.shopping.map(i => i[3] || i[0]).join(", ") + ".";
     if (id === "money") { const m = DUMMY.money, spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), hot = m.cats.filter(c => c[1] / c[2] >= 0.8).map(c => c[0]);
       return `You've used ${Math.round(spent / bud * 100)} percent of this month's budget, and ${m.elapsed} percent of the month has passed.` + (hot.length ? ` ${hot.join(" and ")} ${hot.length > 1 ? "are" : "is"} running high.` : ""); }
@@ -675,6 +707,34 @@
     spokenDay = ymd(d); try { localStorage.setItem("spoken_day", spokenDay); } catch (e) {}
     speak(sayFor("kitchen") + " " + sayFor("headsup"));
   }
+
+  /* ===== pantry: stock from receipts, "use it up", scanning with the tablet camera ===== */
+  let STOCK = { state: "sample", err: "", items: DUMMY.stock.map((s, i) => ({ id: "s" + i, name: s[0], days_left: s[1] })) };
+  let STOCKPICK = null; const RCPT = { phase: "idle", msg: "" };
+  async function loadStock() {
+    try { STOCK = { state: "ok", err: "", items: (await api("/stock")).items }; }
+    catch (e) { console.warn("stock:", e.message || e); STOCK.err = String(e.message || e); }
+    refreshCard("pantry");
+  }
+  function fileToJpegBase64(file) {      // shrink the photo (max 1600 px) so it uploads quickly
+    return new Promise((res, rej) => { const img = new Image(), url = URL.createObjectURL(file);
+      img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c.toDataURL("image/jpeg", 0.85).split(",")[1]); };
+      img.onerror = () => rej(new Error("I couldn't open that photo.")); img.src = url; });
+  }
+  async function sendReceipt(b64) {
+    RCPT.phase = "reading"; hold = true; refreshCard("pantry");
+    try { const j = await api("/receipt", "POST", { image: b64 }); RCPT.phase = "done";
+      RCPT.msg = j.duplicate ? "That receipt was already scanned." : `Added ${j.added} items${j.store ? " from " + j.store : ""}${j.total ? " ($" + Number(j.total).toFixed(2) + ")" : ""}. ${j.soon} to use within a week.`;
+      loadStock(); loadHeads(); setTimeout(() => { if (RCPT.phase === "done") { RCPT.phase = "idle"; refreshCard("pantry"); } }, 12000); }
+    catch (e) { RCPT.phase = "error"; RCPT.msg = String(e.message || e); }
+    hold = false; refreshCard("pantry");
+  }
+  document.getElementById("rcpt").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    if (STOCK.state !== "ok") { RCPT.phase = "error"; RCPT.msg = "Connect the database first (see the setup notes)."; return refreshCard("pantry"); }
+    try { await sendReceipt(await fileToJpegBase64(f)); } catch (err) { RCPT.phase = "error"; RCPT.msg = String(err.message || err); refreshCard("pantry"); }
+  });
 
   /* ===== real photos (Wikipedia thumbnails, cached on the tablet; emoji tile is the fallback) ===== */
   let PHOTO = {}; try { PHOTO = JSON.parse(localStorage.getItem("photos") || "{}"); } catch (e) {}
@@ -732,7 +792,7 @@
 
   /* ===== group + order the sections (tab order = rotation order) ===== */
   const GROUP = { headsup: "Today", events: "Today", weather: "Today", safety: "Today",
-                  kitchen: "Food", eatout: "Food", shop: "Food", money: "Money" };
+                  kitchen: "Food", pantry: "Food", eatout: "Food", shop: "Food", money: "Money" };
   const ORDER = Object.keys(GROUP);
   CARDS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   CARDS.forEach(c => { const r = c.render; c.render = () => r().replace("<h2>", `<h2><span class="hi">${c.icon}</span>`); });
@@ -783,6 +843,7 @@
   loadEatOut(); setInterval(() => loadEatOut(), 6 * 60 * 60 * 1000);   // reuses the saved picks unless they're 12 h old
   loadEvents(); setInterval(loadEvents, 5 * 60 * 1000);
   DUMMY.shopping.forEach(i => fetchPhoto(i[3]));
+  loadStock(); setInterval(loadStock, 10 * 60 * 1000);
   loadMeals(); setInterval(loadMeals, 10 * 60 * 1000);
   loadHeads(); setInterval(loadHeads, 15 * 60 * 1000);
   setInterval(() => { const f = document.querySelector(".map iframe"); if (f) f.src = f.src; }, 30 * 60 * 1000);   // reload the 911 dashboard for fresh data
