@@ -161,6 +161,9 @@
   .mz { top: .3rem; right: .3rem; padding: .15rem; gap: .15rem; opacity: .6; }
   .mz button { width: 1.6rem; height: 1.6rem; padding: 0; border-radius: 50%; font-size: .8rem; line-height: 1; }
   .ev[data-act] { cursor: pointer; } .ev.sel { outline: 2px solid var(--accent); }
+  .plan { grid-template-columns: repeat(7, 1fr); gap: .5rem; } .pd b { font-size: .9rem; } .pd .pic { width: 2.8rem; height: 2.8rem; font-size: 1.5rem; }
+  .warnbox { margin: -.6rem 0 1rem; padding: .6rem 1rem; border-radius: 1rem; background: rgba(255,179,0,.12); border: 1px dashed #ffb300; color: #ffcc66; font-size: .95rem; line-height: 1.35; }
+  .rm { background: none; border: 0; color: var(--dim); font-size: .9rem; padding: .1rem .4rem; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -255,17 +258,18 @@
       <div class="addbar">${bar}</div>`; } },
 
     { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => {
-      const live = MEALS.state === "ok", days = [0, 1, 2, 3, 4].map(o => ymd(addDays(new Date(), o)));
+      const live = MEALS.state === "ok", days = [0, 1, 2, 3, 4, 5, 6].map(o => ymd(addDays(new Date(), o)));
       const ago = (n) => n === 0 ? "Today" : n === 1 ? "Yesterday" : n + " days ago";
       const tiles = days.map(d => { const p = MEALS.plan.find(x => x.planned_for === d);
-        return `<div class="pd"><span class="pl">${dayLabel(d)}</span>` + (p ? `${pic("🍽️", "#ffb74d", PHOTO[p.name])}<b>${esc(p.name)}</b><div class="pa"><button data-act="plan-done" data-id="${esc(p.id)}" data-name="${esc(p.name)}">✅</button><button data-act="plan-rm" data-id="${esc(p.id)}">✕</button></div>` : `<span class="pe">—</span>`) + "</div>"; }).join("");
+        return `<div class="pd"><span class="pl">${dayLabel(d)}</span>` + (p ? `${pic("🍽️", "#ffb74d", PHOTO[p.name])}<b>${esc(p.name)}</b><div class="pa"><button data-act="plan-done" data-id="${esc(p.id)}" data-name="${esc(p.name)}" title="We ate it">✅</button><button data-act="plan-rm" data-id="${esc(p.id)}" title="Remove from plan">✕</button></div>` : `<span class="pe">—</span>`) + "</div>"; }).join("");
       const bar = PICK ? `Plan “${esc(PICK)}” for: ${days.map(d => `<button class="addbtn" data-act="plan-day" data-date="${d}">${dayLabel(d)}</button>`).join("")}<button class="addbtn" data-act="pick-x">Cancel</button>`
-        : voiceBar('<button class="addbtn" data-act="add-meal">🎤 Log or plan a meal</button> <span>“we ate lasagna” · “plan lasagna for Friday”</span>', "meal");
+        : voiceBar('<button class="addbtn" data-act="add-meal">🎤 Log, plan or save a meal</button> <span>“we ate lasagna yesterday” · “plan lasagna for Friday” · “add idea risotto”</span>', "meal");
       return `<h2>Kitchen ${live ? '<span class="tag">Live</span>' : tag()}</h2>
+      ${MEALS.err ? `<div class="warnbox">⚠ Can't read the meals database: ${esc(MEALS.err)} <button class="addbtn" data-act="meals-retry">Retry</button></div>` : ""}
       <div class="sec">Dinner plan</div><div class="plan">${tiles}</div>
       <div class="grid2" style="margin-top:1.1rem;flex:1;min-height:0">
-        <div><div class="sec">Haven't had in a while · tap to plan</div><div class="chips" style="margin-top:.4rem">${MEALS.gaps.map(g => `<button class="chip gap" data-act="pick" data-name="${esc(g.name)}">${esc(g.name)} · ${g.days_since} days</button>`).join("") || '<span class="sub">Nothing stale. Nice variety!</span>'}</div></div>
-        <div><div class="sec">We ate</div>${MEALS.recent.slice(0, 4).map(m => `<div class="row" style="font-size:1.05rem;padding:.45rem 0"><span class="k" style="width:7rem">${ago(m.days_since)}</span>${esc(m.name)}</div>`).join("") || '<span class="sub">Nothing logged yet.</span>'}</div>
+        <div><div class="sec">Suggestions · tap to plan</div><div class="chips" style="margin-top:.4rem">${MEALS.gaps.map(g => `<button class="chip gap" data-act="pick" data-name="${esc(g.name)}">${esc(g.name)} · ${g.idea ? "idea" : g.days_since + " days"}</button>`).join("") || '<span class="sub">Nothing to suggest yet. Say “add idea risotto”, or log what you ate.</span>'}</div></div>
+        <div><div class="sec">We ate</div>${MEALS.recent.slice(0, 4).map(m => `<div class="row" style="font-size:1.05rem;padding:.45rem 0"><span class="k" style="width:7rem">${ago(m.days_since)}</span>${esc(m.name)}${m.id ? ` <button class="rm" data-act="meal-rm" data-id="${esc(m.id)}" title="Remove this entry">✕</button>` : ""}</div>`).join("") || '<span class="sub">Nothing logged yet. Say “we ate lasagna”.</span>'}</div>
       </div>
       <div class="addbar">${bar}</div>`; } },
 
@@ -405,7 +409,7 @@
   const VOICE_LANG = "en";               // "it" if you will mostly speak Italian
   function voiceHint(target) {           // words the speech recognizer should expect: your meal names and event titles
     const uniq = (a) => [...new Set(a.filter(Boolean))];
-    return (target === "meal" ? "We ate lasagna. Plan risotto for Friday. " + uniq([...MEALS.recent, ...MEALS.gaps, ...MEALS.plan].map(m => m.name)).slice(0, 14).join(", ")
+    return (target === "meal" ? "We ate lasagna yesterday. Plan risotto for Friday. Add idea gnocchi. " + uniq([...MEALS.recent, ...MEALS.gaps, ...MEALS.plan].map(m => m.name)).slice(0, 14).join(", ")
       : "Add dinner with Anna on Friday at 7 PM. Delete the farmers market. Move the haircut to Monday at 3 PM. Rename it to lunch. " + uniq(EV.list.map(e => e.what)).slice(0, 8).join(", ")).slice(0, 350);
   }
   const micMode = () => { try { return localStorage.getItem("mic_mode") || "cloud"; } catch (e) { return "cloud"; } };
@@ -504,6 +508,8 @@
     else if (a === "pick-x") { PICK = null; refreshCard("kitchen"); }
     else if (a === "plan-day") { const name = PICK; PICK = null; if (needDb()) return; await mealCall("/meal-plan", { date: d.date, name }); }
     else if (a === "plan-done") { if (!needDb()) await mealCall("/meals", { name: d.name, plan_id: d.id }); }
+    else if (a === "meal-rm") { if (!needDb()) await mealCall("/meals/remove", { id: d.id }); }
+    else if (a === "meals-retry") loadMeals();
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
@@ -517,13 +523,13 @@
   });
 
   /* ===== meals: what we ate, how long ago, and the dinner plan ===== */
-  let MEALS = { state: "sample", recent: DUMMY.meals.recent, gaps: DUMMY.meals.gaps,
+  let MEALS = { state: "sample", err: "", recent: DUMMY.meals.recent, gaps: DUMMY.meals.gaps,
     plan: DUMMY.meals.plan.map((p, i) => ({ id: "s" + i, planned_for: ymd(addDays(new Date(), p.off)), meal_type: "dinner", name: p.name })) };
   let PICK = null;                                   // a suggestion waiting for you to choose a day
   async function loadMeals() {
-    try { const j = await api("/meals"); MEALS = { state: "ok", recent: j.recent, gaps: j.gaps, plan: j.plan };
+    try { const j = await api("/meals"); MEALS = { state: "ok", err: "", recent: j.recent, gaps: j.gaps, plan: j.plan };
       [...j.recent, ...j.gaps, ...j.plan].forEach(m => fetchPhoto(m.name)); }
-    catch (e) { console.warn("meals:", e.message || e); }
+    catch (e) { console.warn("meals:", e.message || e); MEALS.err = String(e.message || e); }   // the Kitchen card shows why it can't read the database
     refreshCard("kitchen");
   }
   const lev = (a, b) => { const m = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { let prev = m[0]; m[0] = i; for (let j = 1; j <= b.length; j++) { const tmp = m[j]; m[j] = Math.min(m[j] + 1, m[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; } } return m[b.length]; };
@@ -534,29 +540,35 @@
   }
   const WD = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   function parseMeal(t) {
-    t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-    let m = t.match(/^(?:let'?s |we'?ll |we will )?(?:plan|have|cook|make)\s+(.+?)\s+(?:(?:for|on)\s+)?(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i);
-    if (m) { const w = m[2].toLowerCase(), now = new Date(), n = w === "today" || w === "tonight" ? 0 : w === "tomorrow" ? 1 : ((WD.indexOf(w) - now.getDay() + 7) % 7 || 7);
+    t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1), now = new Date(), DAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday";
+    let m = t.match(/^(?:add |save |new |remember )?(?:a )?(?:meal )?idea[:,]?\s+(.+)$/i) || t.match(/^(?:add|save)\s+(.+?)\s+(?:to|as)\s+(?:my |our |the )?(?:meal )?ideas$/i);
+    if (m) return { action: "idea", name: cap(m[1]) };
+    m = t.match(new RegExp("^(?:let'?s |we'?ll |we will )?(?:plan|have|cook|make)\\s+(.+?)\\s+(?:(?:for|on)\\s+)?(today|tonight|tomorrow|" + DAYS + ")$", "i"));
+    if (m) { const w = m[2].toLowerCase(), n = w === "today" || w === "tonight" ? 0 : w === "tomorrow" ? 1 : ((WD.indexOf(w) - now.getDay() + 7) % 7 || 7);
       return { action: "plan", name: snapMeal(cap(m[1])), date: ymd(addDays(now, n)), when: w }; }
-    m = t.match(/^(?:we |i )?(?:ate|had|cooked|made)\s+(.+?)(?:\s+for\s+(breakfast|lunch|dinner))?$/i) || t.match(/^abbiamo\s+(?:mangiato|cucinato)\s+(.+)$/i);
-    if (m) return { action: "eat", name: snapMeal(cap(m[1])) };
+    m = t.match(new RegExp("^(?:we |i )?(?:ate|had|cooked|made)\\s+(.+?)(?:\\s+for\\s+(?:breakfast|lunch|dinner))?(?:\\s+(yesterday|last night|today|tonight|(\\d+) days? ago|(?:on |last )(" + DAYS + ")))?$", "i"));
+    if (!m) { const it = t.match(/^abbiamo\s+(?:mangiato|cucinato)\s+(.+)$/i); if (it) m = [t, it[1]]; }
+    if (m) { const w = (m[2] || "").toLowerCase(); let off = 0;
+      if (/yesterday|last night/.test(w)) off = -1; else if (m[3]) off = -Math.min(60, +m[3]); else if (m[4]) off = -(((now.getDay() - WD.indexOf(m[4].toLowerCase()) + 7) % 7) || 7);
+      return { action: "eat", name: snapMeal(cap(m[1])), date: ymd(addDays(now, off)), off }; }
     return null;
   }
-  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : `Log “${m.name}” as eaten at home`;
+  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "idea" ? `Save “${m.name}” as a meal idea`
+    : `Log “${m.name}” as eaten at home${m.off ? (m.off === -1 ? " yesterday" : ` ${-m.off} days ago`) : ""}`;
   async function saveMeal() {
     const m = parseMeal(ADD.text);
     if (!m) return setAdd({ phase: "error", msg: "Try “we ate lasagna” or “plan lasagna for Friday”." });
     if (MEALS.state !== "ok") return setAdd({ phase: "error", msg: "Connect the database first (see the setup notes)." });
     setAdd({ phase: "saving" });
     try {
-      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else await api("/meals", "POST", { name: m.name });
+      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else if (m.action === "idea") await api("/meal-idea", "POST", { name: m.name }); else await api("/meals", "POST", { name: m.name, eaten_on: m.date });
       setAdd({ phase: "done", msg: mealSummary(m) }); loadMeals();
       setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
     } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
   }
   // One status bar for both voice flows (calendar events and meals).
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
-    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna” or “plan lasagna for Friday”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
+    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna yesterday”, “plan lasagna for Friday” or “add idea risotto”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
     : ADD.phase === "confirm" && target === "event" && ADD.plan && ADD.plan.action === "none" ? "⚠ " + esc(ADD.plan.say || "I couldn't work out what to change.") + ' <button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>'
     : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : ADD.plan && ADD.plan.say ? ADD.plan.say : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>`
     : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="mic-mode">' + (micMode() === "cloud" ? "Try browser voice" : "Use cloud voice") + '</button><button class="addbtn" data-act="no">OK</button>';
@@ -633,7 +645,8 @@
   const dayWord = (d) => { const n = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - addDays(new Date(), 0)) / 864e5); return n === 0 ? "today" : n === 1 ? "tomorrow" : "on " + d.toLocaleDateString("en-US", { weekday: "long" }); };
   function sayFor(id) {       // what each card says out loud, written like speech rather than read off the screen
     if (id === "kitchen") { const p = MEALS.plan.find(x => x.planned_for === ymd(new Date())), g = MEALS.gaps.slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`);
-      return (p ? `Tonight's plan is ${p.name}. ` : "Nothing is planned for tonight. ") + (g.length ? `You haven't had ${g.join(", or ")}. Want to plan one?` : ""); }
+      const st = MEALS.gaps.filter(x => !x.idea).slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`), idea = MEALS.gaps.filter(x => x.idea).slice(0, 2).map(x => x.name);
+      return (p ? `Tonight's plan is ${p.name}. ` : "Nothing is planned for tonight. ") + (st.length ? `You haven't had ${st.join(", or ")}. ` : "") + (idea.length ? `Ideas you haven't tried yet: ${idea.join(", ")}. ` : "") + (st.length || idea.length ? "Want to plan one?" : ""); }
     if (id === "headsup") return HEADS.list.length ? "Heads up. " + HEADS.list.slice(0, 3).map(c => `${c.headline}, ${(c.body || "").toLowerCase()}.`).join(" ") : "Nothing needs your attention.";
     if (id === "events") { const l = EV.list.slice(0, 2).map(e => `${e.what} ${dayWord(e.date)}${e.time === "All day" ? ", all day" : " at " + e.time}`); return l.length ? "Coming up: " + l.join(". Then ") + "." : "Nothing is coming up."; }
     if (id === "weather") return WX.state !== "ok" ? "The weather isn't available right now." : `It's ${WX.temp} degrees and ${WX.desc.toLowerCase()}, feels like ${WX.feels}. The high is ${WX.hi}, the low is ${WX.lo}. ${WX.tip}` + (WX.air ? ` Air quality is ${WX.air.label.toLowerCase()}.` : "");

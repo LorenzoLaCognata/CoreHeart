@@ -13,6 +13,7 @@
 //   GET /meals    recent meals (with days since), meals not had in a while, dinner plan.
 //   POST /meals {name, plan_id?}   log a meal eaten at home.
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
+//   POST /meal-idea {name}   save a meal idea (suggested until you cook it);  POST /meals/remove {id}   undo a logged meal.
 //   GET /cards    the tablet's heads-up feed (core_card). Refreshed from the database at most
 //                 every 3 hours when asked, and by a cron trigger if you add one (optional).
 //   POST /cards/refresh   force a refresh now.
@@ -74,7 +75,7 @@ export default {
     if (request.method === "POST" && ["/events/parse", "/events/update", "/events/delete"].includes(url.pathname)) return handleEventEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
     if (url.pathname === "/meals" && request.method === "GET") return handleMeals(env, allowedOrigin);
-    if (request.method === "POST" && ["/meals", "/meal-plan", "/meal-plan/remove"].includes(url.pathname)) return handleMealWrite(url.pathname, request, env, allowedOrigin);
+    if (request.method === "POST" && ["/meals", "/meals/remove", "/meal-plan", "/meal-plan/remove", "/meal-idea"].includes(url.pathname)) return handleMealWrite(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/cards" && request.method === "GET") return handleCards(env, allowedOrigin, false);
     if (url.pathname === "/cards/refresh" && request.method === "POST") return handleCards(env, allowedOrigin, true);
 
@@ -170,7 +171,12 @@ const HOME_TZ = "America/Chicago";   // the household's time zone, for "today" a
 const todayStr = () => new Date().toLocaleDateString("en-CA", { timeZone: HOME_TZ });
 const daysBetween = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 864e5);
 
+const dbHint = (msg) => /PGRST|42P01|does not exist|Could not find|schema cache/i.test(msg) ? `The database tables aren't set up yet: run schema.sql in the Supabase SQL Editor. (${msg})`
+  : /401|403|Invalid API key|JWT/i.test(msg) ? `Supabase refused the key: check that SUPABASE_SERVICE_KEY is the service_role key. (${msg})`
+  : /Invalid URL|fetch failed|must be set/i.test(msg) ? `Check the SUPABASE_URL and SUPABASE_SERVICE_KEY secrets on the Worker. (${msg})` : msg;
+
 async function sb(env, path, { method = "GET", body, prefer } = {}) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set as Worker secrets.");
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     method,
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, "content-type": "application/json", ...(prefer ? { Prefer: prefer } : {}) },
@@ -184,23 +190,21 @@ async function sb(env, path, { method = "GET", body, prefer } = {}) {
 // Recent meals, meals not had for a week or more (but not in the last 60 days), and the dinner plan.
 async function loadMealData(env) {
   const today = todayStr();
-  const [recent, all, plan] = await Promise.all([
+  const [recent, all, plan, recipes] = await Promise.all([
     sb(env, "food_meal?select=id,name,eaten_on&order=eaten_on.desc&limit=8"),
     sb(env, "v_meal_gaps?select=name,last_eaten_on,times_eaten&limit=200"),
     sb(env, `food_meal_plan?select=id,planned_for,name,status&status=eq.planned&planned_for=gte.${today}&order=planned_for.asc&limit=14`),
+    sb(env, "food_recipe?select=id,name&limit=100"),
   ]);
-  const planned = new Set(plan.map((p) => p.name.toLowerCase()));
-  return {
-    recent: recent.map((m) => ({ ...m, days_since: daysBetween(today, m.eaten_on) })),
-    gaps: all.map((g) => ({ name: g.name, days_since: daysBetween(today, g.last_eaten_on), times: g.times_eaten }))
-      .filter((g) => g.days_since >= 7 && g.days_since <= 60 && !planned.has(g.name.toLowerCase()))
-      .sort((a, b) => b.days_since - a.days_since).slice(0, 6),
-    plan,
-  };
+  const planned = new Set(plan.map((p) => p.name.toLowerCase())), eaten = new Set(all.map((g) => g.name.toLowerCase()));
+  const stale = all.map((g) => ({ name: g.name, days_since: daysBetween(today, g.last_eaten_on), times: g.times_eaten }))
+    .filter((g) => g.days_since >= 7 && g.days_since <= 60 && !planned.has(g.name.toLowerCase())).sort((a, b) => b.days_since - a.days_since);
+  const ideas = recipes.filter((r) => !eaten.has(r.name.toLowerCase()) && !planned.has(r.name.toLowerCase())).map((r) => ({ name: r.name, days_since: null, idea: true }));
+  return { recent: recent.map((m) => ({ ...m, days_since: daysBetween(today, m.eaten_on) })), gaps: [...stale, ...ideas].slice(0, 8), plan };
 }
 async function handleMeals(env, allowedOrigin) {
   try { return jsonResponse(await loadMealData(env), 200, allowedOrigin); }
-  catch (err) { return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin); }
+  catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
 }
 
 async function handleMealWrite(path, request, env, allowedOrigin) {
@@ -215,9 +219,16 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
       if (!name || !isDate(b.date)) throw new Error("Need a meal name and a date.");
       await sb(env, "food_meal_plan?on_conflict=planned_for", { method: "POST", prefer: "resolution=merge-duplicates",
         body: { planned_for: b.date, name, status: "planned" } });
+    } else if (path === "/meal-idea") {
+      if (!name) throw new Error("Need a meal name.");
+      const have = await sb(env, "food_recipe?select=name&limit=200");
+      if (!have.some((r) => r.name.toLowerCase() === name.toLowerCase())) await sb(env, "food_recipe", { method: "POST", body: { name } });
+    } else if (path === "/meals/remove") {
+      if (!isId(b.id)) throw new Error("Bad id.");
+      await sb(env, `food_meal?id=eq.${b.id}`, { method: "DELETE" });
     } else {
       if (!name) throw new Error("Need a meal name.");
-      const date = isDate(b.eaten_on) ? b.eaten_on : todayStr();
+      let date = isDate(b.eaten_on) ? b.eaten_on : todayStr(); if (date > todayStr()) date = todayStr();
       await sb(env, "food_meal", { method: "POST", body: { name, eaten_on: date } });
       // Close the matching plan: the one the tablet pointed at, or that day's plan if the name matches.
       if (isId(b.plan_id)) await sb(env, `food_meal_plan?id=eq.${b.plan_id}`, { method: "PATCH", body: { status: "cooked" } });
@@ -229,7 +240,7 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
     lastCards = 0;   // so the heads-up cards pick the change up soon
     return jsonResponse({ ok: true }, 200, allowedOrigin);
   } catch (err) {
-    return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
   }
 }
 
@@ -248,7 +259,7 @@ async function refreshCards(env) {
   const meals = await loadMealData(env);
   meals.plan.filter((p) => p.planned_for === today).forEach((p) =>
     cards.push({ domain: "food", kind: "meal_plan", dedupe_key: p.id, headline: `Tonight: ${p.name}`, body: "On the dinner plan", icon: "🍽️", priority: 80, refreshed_at: started }));
-  meals.gaps.slice(0, 2).forEach((g) =>
+  meals.gaps.filter((g) => !g.idea).slice(0, 2).forEach((g) =>
     cards.push({ domain: "food", kind: "meal_gap", dedupe_key: g.name.toLowerCase(), headline: `${g.name}: not had in ${g.days_since} days`, body: "Plan it this week?", icon: "🍽️", priority: 40, refreshed_at: started }));
   if (cards.length) await sb(env, "core_card?on_conflict=kind,dedupe_key", { method: "POST", prefer: "resolution=merge-duplicates", body: cards });
   await sb(env, `core_card?kind=in.(${MANAGED_KINDS.join(",")})&refreshed_at=lt.${encodeURIComponent(started)}`, { method: "DELETE" });
@@ -261,7 +272,7 @@ async function handleCards(env, allowedOrigin, force) {
     const cards = await sb(env, `core_card?select=id,domain,kind,headline,body,icon,priority&or=(expires_at.is.null,expires_at.gt.${now})&order=priority.desc&limit=8`);
     return jsonResponse({ cards }, 200, allowedOrigin);
   } catch (err) {
-    return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
   }
 }
 
