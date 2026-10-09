@@ -13,6 +13,10 @@
 //   GET /meals    recent meals (with days since), meals not had in a while, dinner plan.
 //   POST /meals {name, plan_id?}   log a meal eaten at home.
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
+//   GET /money    this month's spending by category vs budget (the Money card).
+//   GET /money/setup  accounts, categories with budgets, merchants (finance admin page).
+//   POST /money/import {account, kind, rows}   bank CSV rows -> transactions, categorized (history first, then Claude Haiku for new merchants).
+//   POST /money/budget {category, amount}   POST /money/recategorize {merchant, category}
 //   POST /suggest {request}   Claude suggests 3 dishes (with recipes) from the pantry, recent meals and your request, e.g. "a pumpkin recipe".
 //   POST /receipt {image: base64 JPEG}   Claude reads a grocery receipt photo: products, receipt lines, and pantry stock with expiry dates.
 //   GET /stock    what is in the house, soonest-to-expire first;  POST /stock/used {id | name}   mark something used up.
@@ -77,6 +81,9 @@ export default {
     if (url.pathname === "/events/quick" && request.method === "POST") return handleQuickAdd(request, env, allowedOrigin);
     if (request.method === "POST" && ["/events/parse", "/events/update", "/events/delete"].includes(url.pathname)) return handleEventEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
+    if (url.pathname === "/money" && request.method === "GET") return handleMoney(env, allowedOrigin);
+    if (url.pathname === "/money/setup" && request.method === "GET") return handleMoneySetup(env, allowedOrigin);
+    if (request.method === "POST" && ["/money/import", "/money/budget", "/money/recategorize"].includes(url.pathname)) return handleMoneyWrite(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/suggest" && request.method === "POST") return handleSuggest(request, env, allowedOrigin);
     if (url.pathname === "/stock" && request.method === "GET") return handleStock(env, allowedOrigin);
     if (url.pathname === "/stock/used" && request.method === "POST") return handleStockUsed(request, env, allowedOrigin);
@@ -253,7 +260,7 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
 
 // Card refresh: turn the database's "worth your attention" feed into rows the tablet can read.
 let lastCards = 0;
-const MANAGED_KINDS = ["reminder", "stock", "item", "meal_gap", "meal_plan"];
+const MANAGED_KINDS = ["reminder", "stock", "item", "meal_gap", "meal_plan", "budget"];
 async function refreshCards(env) {
   const started = new Date().toISOString(), today = todayStr();
   const ICON = { core: "🔔", food: "🥬", home: "🏠" };
@@ -268,6 +275,11 @@ async function refreshCards(env) {
     cards.push({ domain: "food", kind: "meal_plan", dedupe_key: p.id, headline: `Tonight: ${p.name}`, body: "On the dinner plan", icon: "🍽️", priority: 80, refreshed_at: started }));
   meals.gaps.filter((g) => !g.idea).slice(0, 2).forEach((g) =>
     cards.push({ domain: "food", kind: "meal_gap", dedupe_key: g.name.toLowerCase(), headline: `${g.name}: not had in ${g.days_since} days`, body: "Plan it this week?", icon: "🍽️", priority: 40, refreshed_at: started }));
+  try {      // a card when a category is close to or over its monthly budget (percentages only, so nothing private shows on the wall)
+    const mo = await moneyData(env);
+    mo.categories.filter((c) => c.budget && c.spent >= c.budget * 0.9).slice(0, 2).forEach((c) => cards.push({ domain: "money", kind: "budget", dedupe_key: c.name.toLowerCase(),
+      headline: `${c.name} is ${c.spent >= c.budget ? "over" : "close to"} its budget (${Math.round((c.spent / c.budget) * 100)}%)`, body: mo.month, icon: "💰", priority: c.spent >= c.budget ? 75 : 55, refreshed_at: started }));
+  } catch (e) { /* no finance data yet */ }
   if (cards.length) await sb(env, "core_card?on_conflict=kind,dedupe_key", { method: "POST", prefer: "resolution=merge-duplicates", body: cards });
   await sb(env, `core_card?kind=in.(${MANAGED_KINDS.join(",")})&refreshed_at=lt.${encodeURIComponent(started)}`, { method: "DELETE" });
   lastCards = Date.now();
@@ -278,6 +290,118 @@ async function handleCards(env, allowedOrigin, force) {
     const now = encodeURIComponent(new Date().toISOString());
     const cards = await sb(env, `core_card?select=id,domain,kind,headline,body,icon,priority&or=(expires_at.is.null,expires_at.gt.${now})&order=priority.desc&limit=8`);
     return jsonResponse({ cards }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
+  }
+}
+
+// ---- Money: bank CSV in, categories (history first, Claude for new merchants), budgets, and the month summary ----
+const MONEY_MODEL = "claude-haiku-4-5-20251001";
+const round2 = (n) => Math.round(n * 100) / 100;
+const pad2w = (n) => String(n).padStart(2, "0");
+function monthBounds(today) {
+  const y = +today.slice(0, 4), m = +today.slice(5, 7), day = +today.slice(8), py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1, pdim = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+  return { y, m, day, dim: new Date(Date.UTC(y, m, 0)).getUTCDate(), start: `${y}-${pad2w(m)}-01`, prevStart: `${py}-${pad2w(pm)}-01`, prevSame: `${py}-${pad2w(pm)}-${pad2w(Math.min(day, pdim))}` };
+}
+async function moneyData(env) {
+  const today = todayStr(), b = monthBounds(today);
+  const [cats, budgets, tx, prev, latest] = await Promise.all([
+    sb(env, "money_category?select=id,name&limit=200"), sb(env, "money_budget?select=category_id,amount&limit=200"),
+    sb(env, `money_transaction?select=posted_on,amount,merchant,category_id&posted_on=gte.${b.start}&limit=5000`),
+    sb(env, `money_transaction?select=amount,category_id&posted_on=gte.${b.prevStart}&posted_on=lte.${b.prevSame}&limit=5000`),
+    sb(env, "money_transaction?select=posted_on&order=posted_on.desc&limit=1"),
+  ]);
+  const name = new Map(cats.map((c) => [c.id, c.name])), nm = (t) => (name.get(t.category_id) || "").toLowerCase();
+  const isSpend = (t) => Number(t.amount) < 0 && nm(t) !== "transfers" && nm(t) !== "income";      // transfers and card payments are not spending
+  const by = new Map(), merchants = new Map(); let spent = 0, income = 0;
+  for (const t of tx) {
+    const a = Number(t.amount); if (a > 0 && nm(t) === "income") income += a;
+    if (!isSpend(t)) continue;
+    spent -= a; const k = name.get(t.category_id) || "Other"; by.set(k, (by.get(k) || 0) - a); merchants.set(t.merchant || "?", (merchants.get(t.merchant || "?") || 0) - a);
+  }
+  const bud = new Map(budgets.map((x) => [name.get(x.category_id), Number(x.amount)]));
+  return { month: new Date(Date.UTC(b.y, b.m - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }), day: b.day, days: b.dim,
+    spent: round2(spent), income: round2(income), prev_spent: round2(prev.filter(isSpend).reduce((a, t) => a - Number(t.amount), 0)),
+    budget_total: round2([...bud.values()].reduce((a, x) => a + x, 0)), has_budgets: bud.size > 0, count: tx.length, data_through: latest[0]?.posted_on || null,
+    categories: [...new Set([...by.keys(), ...bud.keys()])].filter(Boolean).map((n) => ({ name: n, spent: round2(by.get(n) || 0), budget: bud.get(n) ?? null })).sort((a, b) => b.spent - a.spent),
+    top: [...merchants].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([merchant, amount]) => ({ merchant, amount: round2(amount) })) };
+}
+async function handleMoney(env, allowedOrigin) {
+  try { return jsonResponse(await moneyData(env), 200, allowedOrigin); }
+  catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
+}
+async function handleMoneySetup(env, allowedOrigin) {
+  try {
+    const since = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+    const [accounts, cats, budgets, tx] = await Promise.all([sb(env, "money_account?select=id,name,kind&limit=50"), sb(env, "money_category?select=id,name&order=name.asc&limit=200"),
+      sb(env, "money_budget?select=category_id,amount&limit=200"), sb(env, `money_transaction?select=merchant,amount,category_id&posted_on=gte.${since}&limit=5000`)]);
+    const cname = new Map(cats.map((c) => [c.id, c.name])), bud = new Map(budgets.map((x) => [x.category_id, Number(x.amount)])), by = new Map();
+    for (const t of tx) { const k = t.merchant || "?", e = by.get(k) || { merchant: k, count: 0, total: 0, category: cname.get(t.category_id) || "" }; e.count++; e.total += Math.abs(Number(t.amount)); if (t.category_id) e.category = cname.get(t.category_id); by.set(k, e); }
+    return jsonResponse({ accounts, categories: cats.map((c) => ({ id: c.id, name: c.name, budget: bud.get(c.id) ?? null })), merchants: [...by.values()].sort((a, b) => b.count - a.count).slice(0, 60).map((m) => ({ ...m, total: round2(m.total) })) }, 200, allowedOrigin);
+  } catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
+}
+function cleanMerchant(desc) {      // "POS DEBIT TRADER JOE'S #123 MINNEAPOLIS MN" -> "Trader Joe's"
+  let s = String(desc || "").replace(/\s+/g, " ").trim();
+  s = s.replace(/^(?:pos |debit card |card |checkcard |purchase |recurring |ach |online |sq \*|tst\* )+(?:debit |credit |purchase |payment )*/i, "").replace(/[#*]\s*\d+.*$/, "").replace(/\b\d{4,}\b.*$/, "").replace(/\s+[A-Za-z.'-]+\s+[A-Z]{2}\s*$/, "").replace(/\s+[A-Z]{2}\s*$/, "").replace(/\b\d+\b/g, "").replace(/\s+/g, " ").trim();      // store numbers and the trailing "CITY ST"
+  const t = s.split(" ").slice(0, 4).join(" ").toLowerCase().replace(/[^a-z0-9&' .-]/g, "").trim() || String(desc || "").slice(0, 30).toLowerCase();
+  return t.replace(/(^|\s)([a-z])/g, (m, sp, c) => sp + c.toUpperCase());      // capitalise word starts only, so "joe's" stays "Joe's"
+}
+async function categorizeMerchants(env, list, catNames) {      // [{key, sample, sign}] -> Map(key -> category name), asked 60 at a time
+  const out = new Map(), lower = new Map(catNames.map((n) => [n.toLowerCase(), n]));
+  for (let i = 0; i < list.length; i += 60) {
+    const chunk = list.slice(i, i + 60);
+    const prompt = `Assign each merchant to exactly one category from this list: ${catNames.join(", ")}.
+Credit card payments, transfers between accounts, ATM withdrawals and cash advances are "Transfers". Paychecks, interest and other deposits are "Income". If nothing fits use "Other".
+Merchants (key | example text from the bank | usually money in or out):
+${chunk.map((c) => `${JSON.stringify(c.key)} | ${JSON.stringify(c.sample)} | ${c.sign}`).join("\n")}
+Reply with ONLY a JSON object mapping each key to its category name.`;
+    const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: MONEY_MODEL, max_tokens: 3000, messages: [{ role: "user", content: prompt }] }) });
+    const data = await res.json(); if (!res.ok) throw new Error(`Claude API error (${res.status}): ${data?.error?.message || "unknown"}`);
+    const m = (data.content || []).map((c) => c.text || "").join("").match(/\{[\s\S]*\}/); if (!m) continue;
+    const j = JSON.parse(m[0]), nk = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, ""), byKey = new Map(Object.entries(j).map(([k, v]) => [nk(k), v]));
+    for (const c of chunk) { const v = lower.get(String(j[c.key] ?? byKey.get(nk(c.key)) ?? "").toLowerCase()); if (v) out.set(c.key, v); }      // tolerate Claude changing a key's punctuation or case
+  }
+  return out;
+}
+async function handleMoneyWrite(path, request, env, allowedOrigin) {
+  try {
+    const b = await request.json(), cats = await sb(env, "money_category?select=id,name&limit=200");
+    const catByName = (n) => cats.find((c) => c.name.toLowerCase() === String(n || "").toLowerCase());
+    if (path === "/money/budget") {
+      const c = cats.find((x) => x.id === b.category_id) || catByName(b.category); if (!c) throw new Error("Unknown category.");
+      const amt = Number(b.amount);
+      if (!(amt > 0)) await sb(env, `money_budget?category_id=eq.${c.id}`, { method: "DELETE" });
+      else await sb(env, "money_budget?on_conflict=category_id", { method: "POST", prefer: "resolution=merge-duplicates", body: { category_id: c.id, amount: round2(amt) } });
+      return jsonResponse({ ok: true }, 200, allowedOrigin);
+    }
+    if (path === "/money/recategorize") {
+      const merchant = String(b.merchant || "").slice(0, 120), c = b.category ? catByName(b.category) : null; if (!merchant || (b.category && !c)) throw new Error("Need a merchant and a known category.");
+      await sb(env, `money_transaction?merchant=eq.${encodeURIComponent(merchant)}`, { method: "PATCH", body: { category_id: c ? c.id : null } });
+      return jsonResponse({ ok: true }, 200, allowedOrigin);
+    }
+    // ---- import ----
+    const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 5000).map((r) => ({ date: String(r.date || ""), description: String(r.description || "").slice(0, 160), amount: Number(r.amount) }))
+      .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && Number.isFinite(r.amount) && r.amount !== 0);
+    if (!rows.length) throw new Error("No usable rows: each needs a date, a description and a non-zero amount.");
+    const accName = String(b.account || "Main account").trim().slice(0, 60) || "Main account", kind = ["checking", "savings", "credit", "cash"].includes(b.kind) ? b.kind : "checking";
+    let acc = (await sb(env, "money_account?select=id,name&limit=50")).find((a) => a.name.toLowerCase() === accName.toLowerCase());
+    if (!acc) [acc] = await sb(env, "money_account", { method: "POST", prefer: "return=representation", body: { name: accName, kind } });
+    // the same bank line imported twice must not double up: key = date | amount | text | which repeat of that line this is
+    const seen = new Map(), items = rows.map((r) => { const k = `${r.date}|${r.amount.toFixed(2)}|${r.description.toLowerCase()}`, n = (seen.get(k) || 0) + 1; seen.set(k, n); return { ...r, merchant: cleanMerchant(r.description), external_id: `${k}|${n}` }; });
+    const dates = items.map((i) => i.date).sort(), have = new Set((await sb(env, `money_transaction?select=external_id&account_id=eq.${acc.id}&posted_on=gte.${dates[0]}&posted_on=lte.${dates[dates.length - 1]}&limit=20000`)).map((x) => x.external_id));
+    const fresh = items.filter((i) => !have.has(i.external_id));
+    // categories: what you already assigned to the same merchant, then Claude for the rest
+    const known = new Map((await sb(env, "money_transaction?select=merchant,category_id&limit=20000")).filter((x) => x.category_id).map((x) => [x.merchant, x.category_id]));
+    const unknown = [...new Map(fresh.filter((i) => !known.has(i.merchant)).map((i) => [i.merchant, { key: i.merchant, sample: i.description, sign: i.amount > 0 ? "in" : "out" }])).values()];
+    let viaClaude = 0, claudeError = "";
+    if (unknown.length) {
+      try { const got = await categorizeMerchants(env, unknown, cats.map((c) => c.name)); got.forEach((name, key) => { const c = catByName(name); if (c && name.toLowerCase() !== "other") { known.set(key, c.id); viaClaude++; } }); }
+      catch (e) { claudeError = e.message; }
+    }
+    for (let i = 0; i < fresh.length; i += 500) await sb(env, "money_transaction", { method: "POST", body: fresh.slice(i, i + 500).map((r) => ({ account_id: acc.id, posted_on: r.date, amount: r.amount, merchant: r.merchant, category_id: known.get(r.merchant) || null, external_id: r.external_id })) });
+    lastCards = 0;
+    return jsonResponse({ ok: true, added: fresh.length, duplicates: items.length - fresh.length, categorized_by_claude: viaClaude, uncategorized: fresh.filter((r) => !known.get(r.merchant)).length, from: dates[0], to: dates[dates.length - 1], claude_error: claudeError }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
   }

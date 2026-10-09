@@ -246,7 +246,7 @@
     return p.e || (/ital|pasta/.test(k) ? "🍝" : /ramen|noodle|japan/.test(k) ? "🍜" : /mex|taco/.test(k) ? "🌮" : /pizza/.test(k) ? "🍕" : /burger|americ/.test(k) ? "🍔" : /thai|india|curry/.test(k) ? "🍛" : /sushi/.test(k) ? "🍣" : "🍽️"); };
 
   const CARDS = [
-    { id: "headsup", icon: "🔔", label: "Heads-up", accent: "#ffca28", render: () => { const live = HEADS.state === "ok";
+    { id: "headsup", icon: "🔔", label: "Heads-up", accent: "#ffca28", render: () => { if (HEADS.state === "loading") return `<h2>Heads-up</h2><p class="sub">Loading…</p>`; const live = HEADS.state === "ok";
       return `<h2>Heads-up ${live ? '<span class="tag">Live</span>' : tag()}</h2>` + (HEADS.list.length
         ? HEADS.list.slice(0, 5).map(c => `<div class="ev"><span class="ee">${esc(c.icon || "🔔")}</span><div><div class="ew">${esc(c.body || "")}</div>${esc(c.headline)}</div></div>`).join("")
         : `<p class="big">Nothing needs your attention ✨</p>`); } },
@@ -261,16 +261,17 @@
         return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }); };
       const pe = EVPICK !== null ? EV.list[EVPICK] : null, busy = ADD.target === "event" && ADD.phase !== "idle";
       const editor = pe ? `“${esc(pe.what)}” ${lbl(pe.date)}${pe.allDay ? "" : " " + pe.time}: <button class="addbtn" data-act="ev-shift" data-m="-1440">−1 day</button><button class="addbtn" data-act="ev-shift" data-m="1440">+1 day</button>${pe.allDay ? "" : '<button class="addbtn" data-act="ev-shift" data-m="-60">−1 h</button><button class="addbtn" data-act="ev-shift" data-m="60">+1 h</button>'}<button class="addbtn" data-act="ev-rename">✏️ Rename</button><button class="addbtn" data-act="ev-type" title="Type a new name">⌨</button><button class="addbtn" data-act="ev-del">${EVDEL ? "Tap again to delete" : "🗑 Delete"}</button><button class="addbtn" data-act="ev-close">Close</button>` : "";
-      const bar = busy ? voiceBar("", "event") : editor || voiceBar(live ? '<button class="addbtn" data-act="add">🎤 Add or change an event</button> <span>or tap an event to edit it</span>' : "Connect Google Calendar to add or edit events.", "event");
-      return `<h2>Calendar ${live ? '<span class="tag">Live · Google Calendar</span>' : tag()}</h2>
+      const bar = busy ? voiceBar("", "event") : editor || voiceBar(live ? '<button class="addbtn" data-act="add">🎤 Add or change an event</button> <span>or tap an event to edit it</span>' : EV.state === "loading" ? "" : "Connect Google Calendar to add or edit events.", "event");
+      return `<h2>Calendar ${live ? '<span class="tag">Live · Google Calendar</span>' : EV.state === "loading" ? "" : tag()}</h2>
       <div style="display:grid;grid-template-columns:minmax(0,.9fr) 1.2fr;gap:2rem;flex:1;min-height:0">
         <div><div class="mon">${now.toLocaleDateString([], { month: "long", year: "numeric" })}</div><div class="cal">${cells}</div></div>
-        <div>${EV.list.slice(0, 5).map((e, i) => `<div class="ev ${i === EVPICK ? "sel" : ""}" data-act="ev-pick" data-i="${i}"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span></div>`).join("") || '<p class="sub">Nothing coming up.</p>'}</div>
+        <div>${EV.list.slice(0, 5).map((e, i) => `<div class="ev ${i === EVPICK ? "sel" : ""}" data-act="ev-pick" data-i="${i}"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span></div>`).join("") || (EV.state === "loading" ? '<p class="sub">Loading…</p>' : '<p class="sub">Nothing coming up.</p>')}</div>
       </div>
       <div class="addbar">${bar}</div>`; } },
 
     { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => {
       if (SUG.phase !== "idle") return sugPanel();
+      if (MEALS.state === "loading") return `<h2>Kitchen</h2><p class="sub">Loading…</p>`;
       const live = MEALS.state === "ok", days = [0, 1, 2, 3, 4, 5, 6].map(o => ymd(addDays(new Date(), o)));
       const ago = (n) => n === 0 ? "Today" : n === 1 ? "Yesterday" : n + " days ago";
       const tiles = days.map(d => { const p = MEALS.plan.find(x => x.planned_for === d);
@@ -287,6 +288,7 @@
       <div class="addbar">${bar}</div>`; } },
 
     { id: "pantry", icon: "🥬", label: "Pantry", accent: "#9ccc65", render: () => {
+      if (STOCK.state === "loading") return `<h2>Pantry</h2><p class="sub">Loading…</p>`;
       const live = STOCK.state === "ok", soon = STOCK.items.filter(i => i.days_left !== null && i.days_left <= 7), rest = STOCK.items.filter(i => !soon.includes(i));
       const when = (n) => n < 0 ? "expired" : n === 0 ? "today" : n === 1 ? "1 day" : n + " days", sel = STOCKPICK && STOCK.items.find(i => i.id === STOCKPICK);
       const busy = ADD.target === "meal" && ADD.phase !== "idle";
@@ -306,7 +308,7 @@
       <h2>Shopping list · ${DUMMY.shopping.length} items ${tag()}</h2>
       <div class="shop">${DUMMY.shopping.map(i => `<div class="si">${pic(i[1], CAT_BG[i[2]], PHOTO[i[3]])}<b>${i[0]}</b><span>${i[2]}</span></div>`).join("")}</div>` },
 
-    { id: "eatout", icon: "📍", label: "Eat out", accent: "#f06292", render: () => { const live = EAT.state === "ok"; return `
+    { id: "eatout", icon: "📍", label: "Eat out", accent: "#f06292", render: () => { if (EAT.state === "loading") return `<h2>Where to eat tonight</h2><p class="big">🔎 Finding ideas…</p><p class="sub">Claude is checking what's open nearby. About 15 seconds.</p>`; const live = EAT.state === "ok"; return `
       <h2>Where to eat tonight <span class="tag ${live ? "" : "draft"}">${live ? "Live · Claude" : "✏️ DRAFT · sample"}</span></h2>
       <div class="grid2">${EAT.places.map(p => `<div class="tile">
         <div style="display:flex;gap:1rem;align-items:center">${pic(cuisineEmoji(p), "#f06292", p.img)}<div><h3 style="margin:0">${esc(p.name)}</h3><p>${esc([p.kind, p.price].filter(Boolean).join(" · "))}${p.rating ? " · ⭐ " + esc(p.rating) : ""}</p></div></div>
@@ -326,17 +328,22 @@
         <div class="hrs">${(w.hours || []).map(h => `<div class="day"><span>${h.t}</span><div class="e">${h.ico}</div><b>${h.temp}°</b></div>`).join("")}</div>
         <div class="days" style="margin-top:0">${w.days.map(d => `<div class="day"><span>${d.name}</span><div class="e">${d.ico}</div><b>${d.hi}°</b><span>${d.lo}°</span></div>`).join("")}</div></div>`; } },
 
-    { id: "money", icon: "💰", label: "Money", accent: "#81c784", render: () => { const m = DUMMY.money;
-      const spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), pct = Math.round(spent / bud * 100);
-      const R = 56, C = 2 * Math.PI * R, off = C * (1 - Math.min(pct, 100) / 100);
-      return `<h2>Spending this month ${tag()}</h2>
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:2.6rem;align-items:center;flex:1">
-        <div><div class="donut"><svg viewBox="0 0 140 140" width="100%" height="100%" style="transform:rotate(-90deg)"><circle cx="70" cy="70" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14"/><circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"/></svg>
-          <div class="c"><div><b style="font-size:2.8rem;font-weight:300">${pct}%</b><br><span style="color:var(--dim)">of budget</span></div></div></div>
-          <p class="sub" style="text-align:center">${m.day} · ${m.elapsed}% of the month gone${pct > m.elapsed + 5 ? "<br>a bit ahead of pace" : ""}</p></div>
-        <div>${m.cats.map(c => { const p = Math.round(c[1] / c[2] * 100);
-          return `<div class="cat ${p >= 80 ? "hot" : ""}"><div class="l"><span>${c[0]}</span><span>${privacy ? p + "%" : money(c[1]) + " of " + money(c[2]) + " · " + p + "%"}</span></div><div class="bar"><i style="width:${Math.min(p, 100)}%"></i></div></div>`; }).join("")}
-          <div class="chips">${m.bills.map(b => `<span class="chip">${b[0]} · ${b[1]} · ${money(b[2])}</span>`).join("")}</div></div></div>`; } },
+    { id: "money", icon: "💰", label: "Money", accent: "#81c784", render: () => {
+      if (MONEY.state === "loading") return `<h2>Money</h2><p class="sub">Loading…</p>`;
+      const m = MONEY.data, live = MONEY.state === "ok", mo = (n) => money(Math.round(n));
+      const head = `<h2>Spending · ${esc(m.month)} ${live ? '<span class="tag">Live</span>' : tag()}</h2>` + (MONEY.err ? `<div class="warnbox">⚠ Can't read the finance data: ${esc(MONEY.err)} <button class="addbtn" data-act="money-retry">Retry</button></div>` : "");
+      if (!m.count) return head + `<p class="big">No transactions yet</p><p class="sub">Import your bank's CSV with the finance admin page (see the setup notes). Budgets are set there too.</p>`;
+      const pct = m.budget_total ? Math.round(m.spent / m.budget_total * 100) : null, elapsed = Math.round(m.day / m.days * 100), R = 56, C = 2 * Math.PI * R, off = C * (1 - Math.min(pct === null ? 0 : pct, 100) / 100);
+      const mx = Math.max(1, ...m.categories.map(c => c.spent)), vs = m.prev_spent ? Math.round((m.spent - m.prev_spent) / m.prev_spent * 100) : null;
+      const ring = `<div class="donut">${pct === null ? "" : `<svg viewBox="0 0 140 140" width="100%" height="100%" style="transform:rotate(-90deg)"><circle cx="70" cy="70" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14"/><circle cx="70" cy="70" r="${R}" fill="none" stroke="${pct > 100 ? "#ff7043" : "var(--accent)"}" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"/></svg>`}
+        <div class="c"><div>${pct === null ? `<b style="font-size:2.2rem;font-weight:300">${mo(m.spent)}</b><br><span style="color:var(--dim)">spent</span>` : `<b style="font-size:2.8rem;font-weight:300">${pct}%</b><br><span style="color:var(--dim)">of budget</span>`}</div></div></div>`;
+      const stat = (v, l) => `<div class="stat"><b style="font-size:1.6rem">${v}</b><span>${l}</span></div>`;
+      return head + `<div style="display:grid;grid-template-columns:auto 1fr;gap:2.4rem;align-items:center;flex:1;min-height:0">
+        <div>${ring}<p class="sub" style="text-align:center">Day ${m.day} of ${m.days} · ${elapsed}% of the month${pct !== null && pct > elapsed + 5 ? "<br>a bit ahead of pace" : ""}</p></div>
+        <div>${m.categories.slice(0, 7).map(c => { const p = c.budget ? Math.round(c.spent / c.budget * 100) : null;
+          return `<div class="cat ${p !== null && p >= 80 ? "hot" : ""}"><div class="l"><span>${esc(c.name)}</span><span>${privacy ? (p !== null ? p + "%" : "") : mo(c.spent) + (c.budget ? " of " + mo(c.budget) + " · " + p + "%" : "")}</span></div><div class="bar"><i style="width:${Math.min(100, p !== null ? p : Math.round(c.spent / mx * 100))}%"></i></div></div>`; }).join("")}
+          <div class="stats" style="margin-top:.8rem;gap:2rem">${privacy ? "" : stat(mo(m.spent), "spent so far" + (vs === null ? "" : " · " + (vs >= 0 ? "+" : "") + vs + "% vs last month"))}${!privacy && m.income ? stat(mo(m.income), "income") : ""}${!privacy && m.top[0] ? stat(esc(m.top[0].merchant), "biggest: " + mo(m.top[0].amount)) : ""}</div></div></div>
+        <div class="foot">${m.data_through ? "Bank data through " + esc(m.data_through) + ". Import the next CSV to update." : ""}</div>`; } },
 
     { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", keep: true, render: () => `
       <h2>911 · Downtown &amp; North Loop · live <span class="tag">City of Minneapolis</span></h2>
@@ -358,7 +365,8 @@
   const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
   const dayLabel = (s) => { const d = new Date(s + "T00:00"), n = Math.round((d - addDays(new Date(), 0)) / 864e5); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short" }); };
 
-  let EAT = { state: "sample", places: DUMMY.eatOut };
+  let EAT = (() => { try { const c = JSON.parse(localStorage.getItem("eat_cache") || "null");      // recent picks are shown at once; otherwise "loading", never a flash of samples
+    if (c && Date.now() - Date.parse(c.generated_at) < 12 * 3600e3) return { state: "ok", places: c.places, at: c.generated_at }; } catch (e) {} return { state: "loading", places: [] }; })();
   let EATBUSY = false;
   const EAT_KEY = "eat_cache", EAT_TTL_MS = 12 * 3600e3;     // picks are reused for 12 h; the button asks for new ones
   const eatBar = () => EATBUSY ? "🔎 Finding new ideas… about 15 seconds"
@@ -375,7 +383,7 @@
       if (!r.ok || j.error || !Array.isArray(j.places) || !j.places.length) throw new Error(j.message || r.status);
       EAT = { state: "ok", places: j.places.slice(0, 2), at: j.generated_at, note: fresh && j.cached ? "already refreshed a few minutes ago" : "" };
       try { localStorage.setItem(EAT_KEY, JSON.stringify({ places: EAT.places, generated_at: j.generated_at })); } catch (e) {}
-    } catch (e) { console.warn("eat-out:", e.message || e); if (fresh) EAT.note = "couldn't get new ideas"; }
+    } catch (e) { console.warn("eat-out:", e.message || e); if (EAT.state === "loading") EAT = { state: "sample", places: DUMMY.eatOut }; else if (fresh) EAT.note = "couldn't get new ideas"; }
     EATBUSY = false; hold = ["listening", "confirm", "saving"].includes(ADD.phase); if (fresh) left = DWELL;
     refreshCard("eatout");
   }
@@ -383,7 +391,8 @@
   /* ===== Google Calendar (via the Worker) + voice add ===== */
   const evEmoji = (t) => { t = t.toLowerCase(); return /dinner|lunch|brunch|restaurant/.test(t) ? "🍽️" : /birthday/.test(t) ? "🎂" : /flight|airport/.test(t) ? "✈️" : /movie|film/.test(t) ? "🎬" : /call|zoom/.test(t) ? "📞" : /meeting|work/.test(t) ? "💼" : /trash|recycl/.test(t) ? "♻️" : /market/.test(t) ? "🥕" : "📌"; };
   const tNow = new Date();
-  let EV = { state: "sample", list: DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e })) };
+  const sampleEv = () => DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e }));
+  let EV = { state: "loading", list: [] };
   const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false, plan: null, mode: "", renameId: "", renameFrom: "" };
   let EVPICK = null, EVDEL = false;      // the calendar entry being edited, and whether Delete was tapped once
   let hold = false;                                   // pauses card rotation while you're adding an event
@@ -395,7 +404,7 @@
       if (j.error || !Array.isArray(j.events)) throw new Error(j.message || "bad response");
       EV = { state: "ok", list: j.events.map(x => { const d = x.allDay ? new Date(x.start + "T00:00") : new Date(x.start);
         return { date: d, time: x.allDay ? "All day" : d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }), what: x.title, where: x.location, e: evEmoji(x.title), id: x.id, allDay: x.allDay }; }) };
-    } catch (e) { console.warn("calendar:", e.message || e); }   // keep sample / last good list
+    } catch (e) { console.warn("calendar:", e.message || e); if (EV.state === "loading") EV = { state: "sample", list: sampleEv() }; }   // keep sample / last good list
     refreshCard("events");
   }
   function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || SUG.phase !== "idle" || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshVoice(); }
@@ -561,6 +570,7 @@
     else if (a === "sug-plan") { const s = SUG.list[+d.i]; if (s) { SUG.phase = "idle"; PICK = s.name; hold = false; refreshCard("kitchen"); } }
     else if (a === "sug-save") { const s = SUG.list[+d.i]; if (s) { try { await api("/meal-idea", "POST", { name: s.name }); SUG.saved[+d.i] = true; SUG.note = ""; loadMeals(); } catch (err) { SUG.note = String(err.message || err); } refreshCard("kitchen"); } }
     else if (a === "sug-say") { const s = SUG.list[+d.i]; if (s) speak(`${s.name}. ${s.why} ${s.time_min ? "It takes " + s.time_min + " minutes. " : ""}Ingredients: ${s.ingredients.join(", ")}. ${s.steps.map((x, k) => "Step " + (k + 1) + ". " + x).join(" ")}`); }
+    else if (a === "money-retry") loadMoney();
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
@@ -574,13 +584,13 @@
   });
 
   /* ===== meals: what we ate, how long ago, and the dinner plan ===== */
-  let MEALS = { state: "sample", err: "", recent: DUMMY.meals.recent, gaps: DUMMY.meals.gaps,
-    plan: DUMMY.meals.plan.map((p, i) => ({ id: "s" + i, planned_for: ymd(addDays(new Date(), p.off)), meal_type: "dinner", name: p.name })) };
+  const sampleMeals = () => ({ recent: DUMMY.meals.recent, gaps: DUMMY.meals.gaps, plan: DUMMY.meals.plan.map((p, i) => ({ id: "s" + i, planned_for: ymd(addDays(new Date(), p.off)), meal_type: "dinner", name: p.name })) });
+  let MEALS = { state: "loading", err: "", recent: [], gaps: [], plan: [] };
   let PICK = null;                                   // a suggestion waiting for you to choose a day
   async function loadMeals() {
     try { const j = await api("/meals"); MEALS = { state: "ok", err: "", recent: j.recent, gaps: j.gaps, plan: j.plan };
       [...j.recent, ...j.gaps, ...j.plan].forEach(m => fetchPhoto(m.name)); }
-    catch (e) { console.warn("meals:", e.message || e); MEALS.err = String(e.message || e); }   // the Kitchen card shows why it can't read the database
+    catch (e) { console.warn("meals:", e.message || e); if (MEALS.state === "loading") MEALS = { state: "sample", err: String(e.message || e), ...sampleMeals() }; else MEALS.err = String(e.message || e); }   // the Kitchen card shows why it can't read the database
     refreshCard("kitchen");
   }
   /* ===== Claude suggests dishes: "suggest a pumpkin recipe", tap 💡, or "cook with what's expiring" ===== */
@@ -649,9 +659,9 @@
     : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="mic-mode">' + (micMode() === "cloud" ? "Try browser voice" : "Use cloud voice") + '</button><button class="addbtn" data-act="no">OK</button>';
 
   /* ===== heads-up cards (from the database via the Worker) ===== */
-  let HEADS = { state: "sample", list: DUMMY.heads };
+  let HEADS = { state: "loading", list: [] };
   async function loadHeads() {
-    try { HEADS = { state: "ok", list: (await api("/cards")).cards }; } catch (e) { console.warn("cards:", e.message || e); }
+    try { HEADS = { state: "ok", list: (await api("/cards")).cards }; } catch (e) { console.warn("cards:", e.message || e); if (HEADS.state === "loading") HEADS = { state: "sample", list: DUMMY.heads }; }
     refreshCard("headsup");
   }
 
@@ -732,8 +742,9 @@
     if (id === "pantry") { const soon = STOCK.items.filter(i => i.days_left !== null && i.days_left <= 7).slice(0, 4).map(i => `${i.name} ${i.days_left <= 0 ? "today" : i.days_left === 1 ? "tomorrow" : "in " + i.days_left + " days"}`);
       return soon.length ? "Use up soon: " + soon.join(", ") + "." : "Nothing in the pantry is about to expire."; }
     if (id === "shop") return `You need ${plural(DUMMY.shopping.length, "thing")}: ` + DUMMY.shopping.map(i => i[3] || i[0]).join(", ") + ".";
-    if (id === "money") { const m = DUMMY.money, spent = m.cats.reduce((a, c) => a + c[1], 0), bud = m.cats.reduce((a, c) => a + c[2], 0), hot = m.cats.filter(c => c[1] / c[2] >= 0.8).map(c => c[0]);
-      return `You've used ${Math.round(spent / bud * 100)} percent of this month's budget, and ${m.elapsed} percent of the month has passed.` + (hot.length ? ` ${hot.join(" and ")} ${hot.length > 1 ? "are" : "is"} running high.` : ""); }
+    if (id === "money") { if (MONEY.state === "loading" || !MONEY.data || !MONEY.data.count) return "There are no transactions to report yet.";
+      const m = MONEY.data, pct = m.budget_total ? Math.round(m.spent / m.budget_total * 100) : null, el = Math.round(m.day / m.days * 100), hot = m.categories.filter(c => c.budget && c.spent / c.budget >= 0.8).map(c => c.name);
+      return (privacy ? "" : `You've spent ${Math.round(m.spent)} dollars so far this month. `) + (pct !== null ? `That's ${pct} percent of your budget, with ${el} percent of the month gone.` : `The month is ${el} percent over.`) + (hot.length ? ` ${hot.join(" and ")} ${hot.length > 1 ? "are" : "is"} running high.` : ""); }
     return "";
   }
   function cardText() {   // whatever is written on the current card, minus buttons and decoration
@@ -755,11 +766,12 @@
   }
 
   /* ===== pantry: stock from receipts, "use it up", scanning with the tablet camera ===== */
-  let STOCK = { state: "sample", err: "", items: DUMMY.stock.map((s, i) => ({ id: "s" + i, name: s[0], days_left: s[1] })) };
+  const sampleStock = () => DUMMY.stock.map((s, i) => ({ id: "s" + i, name: s[0], days_left: s[1] }));
+  let STOCK = { state: "loading", err: "", items: [] };
   let STOCKPICK = null; const RCPT = { phase: "idle", msg: "" };
   async function loadStock() {
     try { STOCK = { state: "ok", err: "", items: (await api("/stock")).items }; }
-    catch (e) { console.warn("stock:", e.message || e); STOCK.err = String(e.message || e); }
+    catch (e) { console.warn("stock:", e.message || e); if (STOCK.state === "loading") STOCK = { state: "sample", err: String(e.message || e), items: sampleStock() }; else STOCK.err = String(e.message || e); }
     refreshCard("pantry");
   }
   function fileToJpegBase64(file) {      // shrink the photo (max 1600 px) so it uploads quickly
@@ -781,6 +793,16 @@
     if (STOCK.state !== "ok") { RCPT.phase = "error"; RCPT.msg = "Connect the database first (see the setup notes)."; return refreshCard("pantry"); }
     try { await sendReceipt(await fileToJpegBase64(f)); } catch (err) { RCPT.phase = "error"; RCPT.msg = String(err.message || err); refreshCard("pantry"); }
   });
+
+  /* ===== money: real spending from the bank CSV import (finance admin page) ===== */
+  const sampleMoney = () => ({ month: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }), day: 3, days: 31, spent: 205, income: 0, prev_spent: 180, budget_total: 1200, count: 12, data_through: null,
+    categories: DUMMY.money.cats.map(c => ({ name: c[0], spent: c[1], budget: c[2] })), top: [] });
+  let MONEY = { state: "loading", err: "", data: null };
+  async function loadMoney() {
+    try { MONEY = { state: "ok", err: "", data: await api("/money") }; }
+    catch (e) { console.warn("money:", e.message || e); if (MONEY.state === "loading") MONEY = { state: "sample", err: String(e.message || e), data: sampleMoney() }; else MONEY.err = String(e.message || e); }
+    refreshCard("money");
+  }
 
   /* ===== real photos (Wikipedia thumbnails, cached on the tablet; emoji tile is the fallback) ===== */
   let PHOTO = {}; try { PHOTO = JSON.parse(localStorage.getItem("photos") || "{}"); } catch (e) {}
@@ -890,6 +912,7 @@
   loadEvents(); setInterval(loadEvents, 5 * 60 * 1000);
   DUMMY.shopping.forEach(i => fetchPhoto(i[3]));
   loadStock(); setInterval(loadStock, 10 * 60 * 1000);
+  loadMoney(); setInterval(loadMoney, 30 * 60 * 1000);
   loadMeals(); setInterval(loadMeals, 10 * 60 * 1000);
   loadHeads(); setInterval(loadHeads, 15 * 60 * 1000);
   setInterval(() => { const f = document.querySelector(".map iframe"); if (f) f.src = f.src; }, 30 * 60 * 1000);   // reload the 911 dashboard for fresh data

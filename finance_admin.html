@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CoreHeart · Finance admin</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0c10; --panel:#14161d; --line:rgba(245,245,240,.12); --text:#f5f5f0; --dim:rgba(245,245,240,.6); --accent:#81c784; }
+  * { box-sizing: border-box; } body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 1.5rem 1.2rem 4rem; } h1 { margin: 0 0 .2rem; font-weight: 500; } h2 { margin: 0 0 .8rem; font-size: 1.1rem; font-weight: 600; color: var(--accent); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; padding: 1.2rem; margin-top: 1.2rem; } .dim { color: var(--dim); font-size: .92rem; }
+  label { display: inline-flex; align-items: center; gap: .4rem; margin: .3rem 1rem .3rem 0; } input, select, button { font: inherit; color: var(--text); background: #1d212b; border: 1px solid var(--line); border-radius: .6rem; padding: .45rem .7rem; }
+  input[type=number] { width: 7rem; } button { cursor: pointer; } button.go { background: var(--accent); color: #0b0c10; border-color: var(--accent); font-weight: 600; } button:disabled { opacity: .45; cursor: default; }
+  table { width: 100%; border-collapse: collapse; margin-top: .6rem; } td, th { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); font-size: .93rem; } th { color: var(--dim); font-weight: 500; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; } .msg { margin-top: .8rem; } .ok { color: var(--accent); } .bad { color: #ff8a65; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Finance admin</h1>
+  <p class="dim">Use this on a computer, about once a month. The tablet only displays the result.</p>
+
+  <section>
+    <h2>1 · Import a bank CSV</h2>
+    <p class="dim">Download the transactions CSV from your bank's website, then choose it here. Importing the same file twice is safe: lines already imported are skipped.</p>
+    <label>Account <input id="account" value="Main account" /></label>
+    <label>Type <select id="kind"><option value="checking">Checking</option><option value="credit">Credit card</option><option value="savings">Savings</option><option value="cash">Cash</option></select></label><br />
+    <label><input type="file" id="file" accept=".csv,text/csv,text/plain" /></label><br />
+    <label><input type="checkbox" id="flip" /> Positive amounts are spending (some credit-card exports)</label>
+    <label><input type="checkbox" id="dayfirst" /> Dates are day/month/year</label>
+    <div id="preview" class="dim"></div>
+    <p><button id="importBtn" class="go" disabled>Import</button></p>
+    <div id="importMsg" class="msg"></div>
+  </section>
+
+  <section>
+    <h2>2 · Monthly budgets</h2>
+    <p class="dim">The amount you plan to spend per category each month. Leave empty or 0 for no budget. Each box saves when you leave it.</p>
+    <table id="budgets"></table><div id="budgetMsg" class="msg dim"></div>
+  </section>
+
+  <section>
+    <h2>3 · Fix categories</h2>
+    <p class="dim">Your most frequent merchants over the last 90 days. Change a category once and every transaction from that merchant is updated; future imports remember it. Card payments and transfers between your own accounts should be "Transfers" so they don't count as spending.</p>
+    <table id="merchants"></table><div id="merchantMsg" class="msg dim"></div>
+  </section>
+</main>
+
+<script>
+  const WORKER_URL = "https://core-heart.llacognata.workers.dev";
+  // Open this page once as finance_admin_v5.html?key=YOUR_HUB_SECRET; it is remembered in this browser.
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("key")) { try { localStorage.setItem("hub_key", qs.get("key")); } catch (e) {} history.replaceState(null, "", location.pathname); }
+  const hubKey = () => { try { return localStorage.getItem("hub_key") || ""; } catch (e) { return ""; } };
+  const $ = (id) => document.getElementById(id);
+  const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const api = (p, m = "GET", b) => fetch(WORKER_URL + p, { method: m, headers: { "content-type": "application/json", "X-Hub-Secret": hubKey() }, body: b ? JSON.stringify(b) : undefined })
+    .then(async (r) => { const j = await r.json(); if (!r.ok || j.error) throw new Error(j.message || r.status); return j; });
+
+  /* ---------- CSV reading: tolerant of different banks ---------- */
+  function parseCsv(text) {
+    const first = text.split(/\r?\n/).find((l) => l.trim()) || "", delim = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ";" : ",";
+    const rows = []; let row = [], f = "", q = false;
+    for (let i = 0; i < text.length; i++) { const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"') q = true; else if (c === delim) { row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; } else f += c; }
+    if (f || row.length) { row.push(f); rows.push(row); }
+    return rows.filter((r) => r.some((x) => x.trim()));
+  }
+  const iso = (y, m, d) => { y = +y; m = +m; d = +d; return m >= 1 && m <= 12 && d >= 1 && d <= 31 && y > 1990 ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : null; };
+  function parseDate(s, dayFirst) {
+    s = String(s || "").trim(); let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/); if (m) return iso(m[1], m[2], m[3]);
+    m = s.match(/^(\d{1,2})([-/.])(\d{1,2})[-/.](\d{2,4})/); if (!m) return null;
+    const y = m[4].length === 2 ? "20" + m[4] : m[4]; return dayFirst || m[2] === "." ? iso(y, m[3], m[1]) : iso(y, m[1], m[3]);      // 05.10.2026 with dots is day-first
+  }
+  function parseAmount(s) {
+    let t = String(s ?? "").trim(); if (!t) return NaN;
+    const neg = /^\(.*\)$/.test(t) || /^[-−]/.test(t) || /-\s*$/.test(t) || /\bDR\b/i.test(t);
+    t = t.replace(/[^\d.,]/g, ""); if (!t) return NaN;
+    if (/^\d{1,3}(\.\d{3})*,\d{1,2}$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");   // 1.234,56
+    else t = t.replace(/,/g, "");
+    const n = parseFloat(t); return Number.isFinite(n) ? (neg ? -n : n) : NaN;
+  }
+  function mapRows(rows, { flip = false, dayFirst = false } = {}) {
+    const hi = rows.findIndex((r) => r.some((c) => /date|data/i.test(c))), header = hi >= 0 ? rows[hi].map((c) => c.trim().toLowerCase()) : null, body = rows.slice(hi >= 0 ? hi + 1 : 0);
+    const find = (...res) => { for (const re of res) { const i = header ? header.findIndex((h) => re.test(h)) : -1; if (i >= 0) return i; } return -1; };
+    const cols = header ? { date: find(/posted|post date|transaction date/, /date|data/), desc: find(/description|memo|payee|merchant|details|narr|descrizione|causale/, /name/), amount: find(/^amount$|^amount\b|importo/, /amount/), debit: find(/debit|withdraw|uscite/), credit: find(/credit|deposit|entrate/) }
+      : { date: 0, desc: 1, amount: 2, debit: -1, credit: -1 };
+    const items = []; let skipped = 0;
+    for (const r of body) {
+      const date = parseDate(r[cols.date], dayFirst); let amount = cols.amount >= 0 ? parseAmount(r[cols.amount]) : NaN;
+      if (Number.isNaN(amount) && (cols.debit >= 0 || cols.credit >= 0)) { const d = cols.debit >= 0 ? parseAmount(r[cols.debit]) : NaN, c = cols.credit >= 0 ? parseAmount(r[cols.credit]) : NaN; amount = (Number.isNaN(c) ? 0 : Math.abs(c)) - (Number.isNaN(d) ? 0 : Math.abs(d)); }
+      if (flip) amount = -amount;
+      const description = (cols.desc >= 0 ? r[cols.desc] : r.filter((_, i) => i !== cols.date && i !== cols.amount).join(" ")).replace(/\s+/g, " ").trim();
+      if (!date || !Number.isFinite(amount) || amount === 0 || !description) { skipped++; continue; }
+      items.push({ date, description, amount: Math.round(amount * 100) / 100 });
+    }
+    return { items, skipped, cols, hasHeader: !!header };
+  }
+
+  /* ---------- page ---------- */
+  let rowsText = "", parsed = null;
+  function showPreview() {
+    if (!rowsText) return; const o = { flip: $("flip").checked, dayFirst: $("dayfirst").checked };
+    parsed = mapRows(parseCsv(rowsText), o), it = parsed.items; const dates = it.map((i) => i.date).sort(), out = it.filter((i) => i.amount < 0).reduce((a, i) => a + i.amount, 0), inn = it.filter((i) => i.amount > 0).reduce((a, i) => a + i.amount, 0);
+    if (!it.length) { $("preview").innerHTML = '<span class="bad">I could not find any transactions in that file. Check it has date, description and amount columns.</span>'; $("importBtn").disabled = true; return; }
+    $("preview").innerHTML = `<p><b>${it.length}</b> transactions from <b>${dates[0]}</b> to <b>${dates[dates.length - 1]}</b>${parsed.skipped ? `, ${parsed.skipped} unreadable lines skipped` : ""}. Money out ${Math.abs(out).toFixed(2)}, money in ${inn.toFixed(2)}. If those look reversed, tick "Positive amounts are spending".</p>`
+      + `<table><tr><th>Date</th><th>Description</th><th class="n">Amount</th></tr>${it.slice(0, 6).map((i) => `<tr><td>${i.date}</td><td>${esc(i.description)}</td><td class="n">${i.amount.toFixed(2)}</td></tr>`).join("")}</table>`;
+    $("importBtn").disabled = false;
+  }
+  $("file").addEventListener("change", async (e) => { const f = e.target.files[0]; if (!f) return; rowsText = await f.text(); showPreview(); });
+  $("flip").addEventListener("change", showPreview); $("dayfirst").addEventListener("change", showPreview);
+  $("importBtn").addEventListener("click", async () => {
+    $("importBtn").disabled = true; $("importMsg").className = "msg dim"; $("importMsg").textContent = "Importing and categorizing… this can take up to a minute for a big file.";
+    try { const j = await api("/money/import", "POST", { account: $("account").value, kind: $("kind").value, rows: parsed.items });
+      $("importMsg").className = "msg ok"; $("importMsg").textContent = `Added ${j.added} transactions (${j.duplicates} already there). Claude categorized ${j.categorized_by_claude} new merchants; ${j.uncategorized} transactions are still uncategorized.` + (j.claude_error ? ` Categorizing failed: ${j.claude_error}` : "");
+      loadSetup(); }
+    catch (e) { $("importMsg").className = "msg bad"; $("importMsg").textContent = e.message; $("importBtn").disabled = false; }
+  });
+  async function loadSetup() {
+    try {
+      const s = await api("/money/setup");
+      $("budgets").innerHTML = `<tr><th>Category</th><th class="n">Monthly budget</th></tr>` + s.categories.filter((c) => !/^(income|transfers)$/i.test(c.name)).map((c) => `<tr><td>${esc(c.name)}</td><td class="n"><input type="number" min="0" step="10" data-cat="${esc(c.id)}" value="${c.budget ?? ""}" placeholder="none" /></td></tr>`).join("");
+      $("budgets").querySelectorAll("input").forEach((inp) => inp.addEventListener("change", async () => { $("budgetMsg").textContent = "Saving…";
+        try { await api("/money/budget", "POST", { category_id: inp.dataset.cat, amount: Number(inp.value) || 0 }); $("budgetMsg").textContent = "Saved."; } catch (e) { $("budgetMsg").textContent = e.message; } }));
+      const opts = (cur) => `<option value="">(none)</option>` + s.categories.map((c) => `<option ${c.name === cur ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+      $("merchants").innerHTML = `<tr><th>Merchant</th><th class="n">Times</th><th class="n">Total</th><th>Category</th></tr>` + s.merchants.map((m, i) => `<tr><td>${esc(m.merchant)}</td><td class="n">${m.count}</td><td class="n">${m.total.toFixed(2)}</td><td><select data-i="${i}">${opts(m.category)}</select></td></tr>`).join("");
+      $("merchants").querySelectorAll("select").forEach((sel) => sel.addEventListener("change", async () => { const m = s.merchants[+sel.dataset.i]; $("merchantMsg").textContent = "Saving…";
+        try { await api("/money/recategorize", "POST", { merchant: m.merchant, category: sel.value }); $("merchantMsg").textContent = `Saved: ${m.merchant} is now ${sel.value || "uncategorized"}.`; } catch (e) { $("merchantMsg").textContent = e.message; } }));
+    } catch (e) { $("budgetMsg").textContent = $("merchantMsg").textContent = "Can't reach the database: " + e.message; }
+  }
+  loadSetup();
+</script>
+</body>
+</html>

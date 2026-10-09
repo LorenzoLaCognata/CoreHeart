@@ -7,6 +7,7 @@ A wall-mounted household display. One calm card at a time, rotating every 30 sec
 - **A pull surface, not a push one.** The screen never asks for input. Everything on it is filled automatically from services, with the one exception of adding a calendar event by voice.
 - **One card, one question.** What's coming up? What should we cook? Where do we eat? How is the money? Each card answers one of these.
 - **Quiet AI.** Plain code does the math and fetching. Claude is used only where judgement or wording helps (currently: picking dinner places).
+- **You stay in control of the pace.** A pause button stops the card rotation; tap the icons to jump anywhere.
 - **It can speak.** A button reads the current card aloud, and an optional daily 5 PM announcement reads the dinner suggestion and heads-ups, using the browser's built-in text-to-speech.
 - **Honest about what is real.** Any card still showing sample data is clearly marked with an amber dashed border and a DRAFT ribbon.
 
@@ -14,14 +15,15 @@ A wall-mounted household display. One calm card at a time, rotating every 30 sec
 
 | Section | Card | What it shows | Source | Status |
 |---|---|---|---|---|
-| Today | Heads-up | What deserves attention across everything: check-ups to book, documents expiring, bills, food to use up, meal ideas | Database (`core_card`, built from `v_heads_up`) | Live once the database is connected |
-| Today | Calendar | Month grid, upcoming events, add an event by voice | Google Calendar API | Live once connected |
+| Today | Heads-up | What deserves attention: reminders coming due, food to use up, warranties ending, meal ideas | Database (`core_card`, built from `v_heads_up`) | Live once the database is connected |
+| Today | Calendar | Month grid, upcoming events; add, move, rename or delete events by tap or voice | Google Calendar API | Live once connected |
 | Today | Weather | Conditions, hourly and 4-day outlook, humidity, rain chance, UV, sunrise and sunset, air quality | Open-Meteo | Live |
 | Today | 911 | Neighborhood 911 activity map and categories | City of Minneapolis Tableau dashboard (embedded) | Live |
-| Food | Kitchen | Dinner plan for the next 5 days, meals not had in a while ("not had in 8 days"), what we ate and how long ago. Log or plan by voice or one tap | Database (`food_meal`, `food_meal_plan`), Wikipedia photos | Live once the database is connected |
+| Food | Kitchen | 7-day dinner plan, suggestions (meals not had in a while and saved ideas), what we ate at home with how long ago, and "suggest a pumpkin recipe": three Claude-written dishes with recipes that use what is in the pantry. Log, plan or save by voice or tap | Database (`food_meal`, `food_meal_plan`, `food_recipe`), Claude, Wikipedia photos | Live once the database is connected |
+| Food | Pantry | What is in the house, soonest to expire first, filled by photographing grocery receipts with the tablet camera; tap or say when something is used up | Claude reads the receipt photo; database (`food_stock`, `food_receipt`, `food_product`) | Live once the database is connected |
 | Food | Eat out | Two dinner ideas with hours, address and a dish to try, with a "New ideas" button | Claude with web search | Live |
 | Food | Shopping | Shopping list with pictures | Sample data, Wikipedia photos | Draft |
-| Money | Money | Spend by category and budget, upcoming bills | Sample data | Draft |
+| Money | Money | Spending this month vs budget, per-category bars, pace through the month, last month at the same point, biggest merchant; a limited-privacy view hides amounts | Your bank's CSV, imported with `finance_admin_v5.html`; Claude categorizes new merchants | Live once the database is connected |
 
 ## How it works
 
@@ -38,8 +40,9 @@ The page is a single static file with no build step. The Worker keeps all secret
 ## Repository layout
 
 - `index.html` — the whole display: layout, cards, sample data, rotation
+- `finance_admin_v5.html` — monthly bank CSV import, budgets and category fixes (used on a computer)
 - `worker.js` — the Cloudflare Worker: Claude dinner picks, Google Calendar read and quick-add, health check
-- `schema.sql` — the Postgres (Supabase) database: food, money, home inventory, travel and health logistics
+- `schema.sql` — the Postgres (Supabase) database: food, money, home inventory and travel
 - `DATABASE.md` — how the database is organized and how to migrate older data into it
 
 ## Configuration
@@ -50,11 +53,12 @@ The tablet stores the shared secret locally the first time it is opened with `?k
 
 ## Database
 
-One Postgres database with six domains (core, food, money, home, travel, health). A single feed of "things worth your attention" keeps the display to one rotating stream of cards no matter how much data sits behind it. See `DATABASE.md`.
+One small Postgres database with five domains (core, food, money, home, travel). A single feed of "things worth your attention" keeps the display to one rotating stream of cards no matter how much data sits behind it. See `DATABASE.md`.
 
 ## Roadmap
 
 1. Kitchen: Claude suggests recipes from what needs eating and what was eaten recently.
 2. Money: monthly bank CSV import with spend by category.
 3. Restaurants "to try" list feeding the Eat out picks.
+5. Link scanned grocery receipts to the matching bank transaction.
 4. Real photos from a recipe source instead of Wikipedia matches.
