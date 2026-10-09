@@ -13,6 +13,7 @@
 //   GET /meals    recent meals (with days since), meals not had in a while, dinner plan.
 //   POST /meals {name, plan_id?}   log a meal eaten at home.
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
+//   POST /suggest {request}   Claude suggests 3 dishes (with recipes) from the pantry, recent meals and your request, e.g. "a pumpkin recipe".
 //   POST /receipt {image: base64 JPEG}   Claude reads a grocery receipt photo: products, receipt lines, and pantry stock with expiry dates.
 //   GET /stock    what is in the house, soonest-to-expire first;  POST /stock/used {id | name}   mark something used up.
 //   POST /meal-idea {name}   save a meal idea (suggested until you cook it);  POST /meals/remove {id}   undo a logged meal.
@@ -76,6 +77,7 @@ export default {
     if (url.pathname === "/events/quick" && request.method === "POST") return handleQuickAdd(request, env, allowedOrigin);
     if (request.method === "POST" && ["/events/parse", "/events/update", "/events/delete"].includes(url.pathname)) return handleEventEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
+    if (url.pathname === "/suggest" && request.method === "POST") return handleSuggest(request, env, allowedOrigin);
     if (url.pathname === "/stock" && request.method === "GET") return handleStock(env, allowedOrigin);
     if (url.pathname === "/stock/used" && request.method === "POST") return handleStockUsed(request, env, allowedOrigin);
     if (url.pathname === "/receipt" && request.method === "POST") return handleReceipt(request, env, allowedOrigin);
@@ -278,6 +280,38 @@ async function handleCards(env, allowedOrigin, force) {
     return jsonResponse({ cards }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
+  }
+}
+
+// ---- Kitchen suggestions: "suggest a pumpkin recipe", "something quick", "use up the spinach" ----
+const SUGGEST_MODEL = "claude-haiku-4-5-20251001";
+async function handleSuggest(request, env, allowedOrigin) {
+  try {
+    const ask = String((await request.json()).request || "").trim().slice(0, 200) || "something good for dinner tonight", today = todayStr();
+    let recent = [], stock = [], ideas = [];
+    try { [recent, stock, ideas] = await Promise.all([sb(env, "food_meal?select=name,eaten_on&order=eaten_on.desc&limit=20"), loadStock(env), sb(env, "food_recipe?select=name&limit=40")]); }
+    catch (e) { /* suggestions still work without the database, just with less context */ }
+    const prompt = `You are the kitchen assistant for two adults who cook dinner at home. They asked: ${JSON.stringify(ask)}
+The request may come from speech recognition, so read it loosely: it may be a dish ("a pumpkin recipe"), an ingredient, a mood ("something light"), or a general question ("what should we cook").
+In the pantry (soonest to expire first, days left): ${stock.slice(0, 40).map((i) => `${i.name} (${i.days_left === null ? "?" : i.days_left}d)`).join(", ") || "unknown"}.
+Eaten at home recently: ${recent.map((m) => `${m.name} (${daysBetween(today, m.eaten_on)} days ago)`).join(", ") || "nothing logged"}.
+Saved ideas: ${ideas.map((r) => r.name).join(", ") || "none"}.
+Reply with ONLY this JSON, no markdown: {"suggestions":[{"name":"short dish name","why":"one short sentence on why it fits","time_min":number,"uses":["pantry items it uses"],"ingredients":["quantity and item", up to 10],"steps":["short step", 3 to 6 steps]}]}
+Give exactly 3 different suggestions that fit the request. Prefer using pantry items that expire soon. Don't repeat what they ate in the last 4 days unless they ask for it. Keep ingredients and steps brief and practical.`;
+    const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({ model: SUGGEST_MODEL, max_tokens: 2000, messages: [{ role: "user", content: prompt }] }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(`Claude API error (${res.status}): ${data?.error?.message || "unknown"}`);
+    const m = (data.content || []).map((c) => c.text || "").join("").match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("I couldn't come up with suggestions. Try asking again.");
+    const strs = (a, n, len) => (Array.isArray(a) ? a : []).map((x) => String(x).trim().slice(0, len)).filter(Boolean).slice(0, n);
+    const suggestions = (JSON.parse(m[0]).suggestions || []).slice(0, 3).map((s) => ({ name: String(s.name || "").trim().slice(0, 80), why: String(s.why || "").slice(0, 200),
+      time_min: Math.max(0, Math.min(600, Math.round(Number(s.time_min) || 0))), uses: strs(s.uses, 6, 40), ingredients: strs(s.ingredients, 12, 80), steps: strs(s.steps, 8, 220) })).filter((s) => s.name);
+    if (!suggestions.length) throw new Error("I couldn't come up with suggestions. Try asking again.");
+    return jsonResponse({ suggestions }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: err.message }, 200, allowedOrigin);
   }
 }
 

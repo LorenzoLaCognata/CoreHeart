@@ -165,6 +165,12 @@
   .warnbox { margin: -.6rem 0 1rem; padding: .6rem 1rem; border-radius: 1rem; background: rgba(255,179,0,.12); border: 1px dashed #ffb300; color: #ffcc66; font-size: .95rem; line-height: 1.35; }
   .rm { background: none; border: 0; color: var(--dim); font-size: .9rem; padding: .1rem .4rem; margin-left: auto; }
   .dimchip { opacity: .65; font-size: .95rem; padding: .4rem .9rem; }
+  .sugs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; flex: 1; min-height: 0; }
+  .sug { display: flex; flex-direction: column; padding: 1.1rem; border-radius: 1.2rem; border: 1px solid var(--line); border-left: 4px solid var(--accent); background: linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.01)); min-height: 0; }
+  .sug .sh { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; } .sug .sh b { font-size: 1.3rem; font-weight: 500; } .sug .sh span { color: var(--dim); white-space: nowrap; }
+  .sug > p { margin: .3rem 0 .6rem; color: var(--dim); font-size: 1.05rem; line-height: 1.35; }
+  .sug .rec { font-size: .95rem; line-height: 1.4; overflow-y: auto; margin-bottom: .6rem; } .sug .rec p { margin: .2rem 0 .6rem; } .sug .rec ol { margin: .2rem 0; padding-left: 1.2rem; }
+  .sug .sa { margin-top: auto; display: flex; gap: .4rem; flex-wrap: wrap; } .sug .sa .addbtn { padding: .5rem .8rem; font-size: .95rem; }
 </style>
 </head>
 <body>
@@ -254,7 +260,7 @@
       const sod = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()), lbl = (d) => { const n = Math.round((sod(d) - sod(now)) / 864e5);
         return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }); };
       const pe = EVPICK !== null ? EV.list[EVPICK] : null, busy = ADD.target === "event" && ADD.phase !== "idle";
-      const editor = pe ? `“${esc(pe.what)}” ${lbl(pe.date)}${pe.allDay ? "" : " " + pe.time}: <button class="addbtn" data-act="ev-shift" data-m="-1440">−1 day</button><button class="addbtn" data-act="ev-shift" data-m="1440">+1 day</button>${pe.allDay ? "" : '<button class="addbtn" data-act="ev-shift" data-m="-60">−1 h</button><button class="addbtn" data-act="ev-shift" data-m="60">+1 h</button>'}<button class="addbtn" data-act="ev-del">${EVDEL ? "Tap again to delete" : "🗑 Delete"}</button><button class="addbtn" data-act="ev-close">Close</button>` : "";
+      const editor = pe ? `“${esc(pe.what)}” ${lbl(pe.date)}${pe.allDay ? "" : " " + pe.time}: <button class="addbtn" data-act="ev-shift" data-m="-1440">−1 day</button><button class="addbtn" data-act="ev-shift" data-m="1440">+1 day</button>${pe.allDay ? "" : '<button class="addbtn" data-act="ev-shift" data-m="-60">−1 h</button><button class="addbtn" data-act="ev-shift" data-m="60">+1 h</button>'}<button class="addbtn" data-act="ev-rename">✏️ Rename</button><button class="addbtn" data-act="ev-type" title="Type a new name">⌨</button><button class="addbtn" data-act="ev-del">${EVDEL ? "Tap again to delete" : "🗑 Delete"}</button><button class="addbtn" data-act="ev-close">Close</button>` : "";
       const bar = busy ? voiceBar("", "event") : editor || voiceBar(live ? '<button class="addbtn" data-act="add">🎤 Add or change an event</button> <span>or tap an event to edit it</span>' : "Connect Google Calendar to add or edit events.", "event");
       return `<h2>Calendar ${live ? '<span class="tag">Live · Google Calendar</span>' : tag()}</h2>
       <div style="display:grid;grid-template-columns:minmax(0,.9fr) 1.2fr;gap:2rem;flex:1;min-height:0">
@@ -264,12 +270,13 @@
       <div class="addbar">${bar}</div>`; } },
 
     { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => {
+      if (SUG.phase !== "idle") return sugPanel();
       const live = MEALS.state === "ok", days = [0, 1, 2, 3, 4, 5, 6].map(o => ymd(addDays(new Date(), o)));
       const ago = (n) => n === 0 ? "Today" : n === 1 ? "Yesterday" : n + " days ago";
       const tiles = days.map(d => { const p = MEALS.plan.find(x => x.planned_for === d);
         return `<div class="pd"><span class="pl">${dayLabel(d)}</span>` + (p ? `${pic("🍽️", "#ffb74d", PHOTO[p.name])}<b>${esc(p.name)}</b><div class="pa"><button data-act="plan-done" data-id="${esc(p.id)}" data-name="${esc(p.name)}" title="We ate it">✅</button><button data-act="plan-rm" data-id="${esc(p.id)}" title="Remove from plan">✕</button></div>` : `<span class="pe">—</span>`) + "</div>"; }).join("");
       const bar = PICK ? `Plan “${esc(PICK)}” for: ${days.map(d => `<button class="addbtn" data-act="plan-day" data-date="${d}">${dayLabel(d)}</button>`).join("")}<button class="addbtn" data-act="pick-x">Cancel</button>`
-        : voiceBar('<button class="addbtn" data-act="add-meal">🎤 Log, plan or save a meal</button> <span>“we ate lasagna yesterday” · “plan lasagna for Friday” · “add idea risotto”</span>', "meal");
+        : voiceBar('<button class="addbtn" data-act="suggest">💡 Suggest a meal</button><button class="addbtn" data-act="add-meal">🎤 Speak</button> <span>“suggest a pumpkin recipe” · “we ate lasagna yesterday” · “plan lasagna for Friday”</span>', "meal");
       return `<h2>Kitchen ${live ? '<span class="tag">Live</span>' : tag()}</h2>
       ${MEALS.err ? `<div class="warnbox">⚠ Can't read the meals database: ${esc(MEALS.err)} <button class="addbtn" data-act="meals-retry">Retry</button></div>` : ""}
       <div class="sec">Dinner plan</div><div class="plan">${tiles}</div>
@@ -286,7 +293,7 @@
       const bar = busy ? voiceBar("", "meal") : sel ? `“${esc(sel.name)}”${sel.days_left === null ? "" : " (" + when(sel.days_left) + ")"}: <button class="addbtn go" data-act="stock-used" data-id="${esc(sel.id)}">✅ Used it up</button><button class="addbtn" data-act="stock-x">Cancel</button>`
         : RCPT.phase === "reading" ? "📷 Reading the receipt… about 15 seconds" : RCPT.phase === "done" ? "✅ " + esc(RCPT.msg)
         : RCPT.phase === "error" ? "⚠ " + esc(RCPT.msg) + ' <button class="addbtn" data-act="scan">Try again</button>'
-        : '<button class="addbtn" data-act="scan">📷 Scan a receipt</button><button class="addbtn" data-act="add-meal">🎤 Say what you used</button> <span>lay receipts flat in good light · “we finished the milk”</span>';
+        : '<button class="addbtn" data-act="scan">📷 Scan a receipt</button><button class="addbtn" data-act="add-meal">🎤 Say what you used</button><button class="addbtn" data-act="suggest-use">💡 Cook with what’s expiring</button> <span>lay receipts flat in good light · “we finished the milk”</span>';
       return `<h2>Pantry · ${STOCK.items.length} in the house ${live ? '<span class="tag">Live</span>' : tag()}</h2>
       ${STOCK.err ? `<div class="warnbox">⚠ Can't read the pantry: ${esc(STOCK.err)} <button class="addbtn" data-act="stock-retry">Retry</button></div>` : ""}
       <div class="sec">Use it up · tap when used</div>
@@ -377,7 +384,7 @@
   const evEmoji = (t) => { t = t.toLowerCase(); return /dinner|lunch|brunch|restaurant/.test(t) ? "🍽️" : /birthday/.test(t) ? "🎂" : /flight|airport/.test(t) ? "✈️" : /movie|film/.test(t) ? "🎬" : /call|zoom/.test(t) ? "📞" : /meeting|work/.test(t) ? "💼" : /trash|recycl/.test(t) ? "♻️" : /market/.test(t) ? "🥕" : "📌"; };
   const tNow = new Date();
   let EV = { state: "sample", list: DUMMY.events.map(e => ({ date: new Date(tNow.getFullYear(), tNow.getMonth(), tNow.getDate() + e.off), time: e.time, what: e.what, where: e.where, e: e.e })) };
-  const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false, plan: null };
+  const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false, plan: null, mode: "", renameId: "", renameFrom: "" };
   let EVPICK = null, EVDEL = false;      // the calendar entry being edited, and whether Delete was tapped once
   let hold = false;                                   // pauses card rotation while you're adding an event
   const refreshVoice = () => { if (ADD.target === "meal") { refreshCard("kitchen"); refreshCard("pantry"); } else refreshCard("events"); };   // meal voice commands work from Kitchen and Pantry
@@ -391,7 +398,7 @@
     } catch (e) { console.warn("calendar:", e.message || e); }   // keep sample / last good list
     refreshCard("events");
   }
-  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshVoice(); }
+  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || SUG.phase !== "idle" || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshVoice(); }
   const micDiag = (code) => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}${code ? ", code: " + code : ""}]`;
   async function micPreflight() {      // ask for the microphone explicitly so a permission problem is reported clearly
     if (!window.isSecureContext) return "The microphone only works on https pages (this one is " + location.protocol + "). Host the page on GitHub Pages or Cloudflare Pages.";
@@ -407,6 +414,11 @@
     return "";
   }
   async function gotText(target, text) {      // events: Claude proposes the change (add, move, rename, delete); you confirm before anything happens
+    if (target === "meal") { const m = parseMeal(text); if (m && m.action === "suggest") return runSuggest(m.request); }      // "suggest a pumpkin recipe"
+    if (target === "event" && ADD.mode === "rename" && ADD.renameId) {                                                       // rename: what you say is the new name
+      const n = text.trim().replace(/[.!?]+$/, "").replace(/^./, c => c.toUpperCase());
+      return setAdd({ phase: "confirm", target, text: n, plan: n ? { action: "rename", event_id: ADD.renameId, new_title: n, say: `Rename “${ADD.renameFrom}” to “${n}”` } : { action: "none", say: "I didn't catch the new name." } });
+    }
     if (target !== "event" || EV.state !== "ok") return setAdd({ phase: "confirm", target, text, plan: null });
     setAdd({ phase: "testing", target, text, msg: "⏳ Understanding…" });
     let plan = null; try { plan = await api("/events/parse", "POST", { text }); } catch (e) { console.warn("parse:", e.message || e); }
@@ -432,7 +444,7 @@
   const VOICE_LANG = "en";               // "it" if you will mostly speak Italian
   function voiceHint(target) {           // words the speech recognizer should expect: your meal names and event titles
     const uniq = (a) => [...new Set(a.filter(Boolean))];
-    return (target === "meal" ? "We ate lasagna yesterday. Plan risotto for Friday. Add idea gnocchi. " + uniq([...MEALS.recent, ...MEALS.gaps, ...MEALS.plan].map(m => m.name)).slice(0, 14).join(", ")
+    return (target === "meal" ? "Suggest a pumpkin recipe. We ate lasagna yesterday. Plan risotto for Friday. Add idea gnocchi. " + uniq([...MEALS.recent, ...MEALS.gaps, ...MEALS.plan].map(m => m.name)).slice(0, 14).join(", ")
       : "Add dinner with Anna on Friday at 7 PM. Delete the farmers market. Move the haircut to Monday at 3 PM. Rename it to lunch. " + uniq(EV.list.map(e => e.what)).slice(0, 8).join(", ")).slice(0, 350);
   }
   const micMode = () => { try { return localStorage.getItem("mic_mode") || "cloud"; } catch (e) { return "cloud"; } };
@@ -514,7 +526,7 @@
       if (p.action === "delete") await api("/events/delete", "POST", { id: p.event_id });
       else if (p.action === "move" || p.action === "rename") await api("/events/update", "POST", { id: p.event_id, start: p.new_start || undefined, title: p.action === "rename" ? p.new_title : undefined });
       else { const j = await api("/events/quick", "POST", { text: p.add_text || ADD.text }); p.say = "Added: " + (j.title || ADD.text); }
-      EVPICK = null; setAdd({ phase: "done", msg: p.action === "add" ? p.say : "Done: " + String(p.say || "").replace(/\?$/, ""), plan: null }); loadEvents();
+      EVPICK = null; setAdd({ phase: "done", msg: p.action === "add" ? p.say : "Done: " + String(p.say || "").replace(/\?$/, ""), plan: null, mode: "" }); loadEvents();
       setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
     } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
   }
@@ -523,9 +535,9 @@
   document.addEventListener("click", async (e) => {
     ARMED = true;                                    // any tap lets the browser play spoken suggestions
     const b = e.target.closest("[data-act]"); if (!b) return; const a = b.dataset.act, d = b.dataset;
-    if (a === "add") listen("event"); else if (a === "add-meal") listen("meal");
+    if (a === "add") { ADD.mode = ""; listen("event"); } else if (a === "add-meal") listen("meal");
     else if (a === "yes") { if (ADD.target === "meal") saveMeal(); else saveEvent(); }
-    else if (a === "no") setAdd({ phase: "idle", text: "" });
+    else if (a === "no") setAdd({ phase: "idle", text: "", mode: "" });
     else if (a === "eat-new") loadEatOut(true);
     else if (a === "pick") { PICK = d.name; refreshCard("kitchen"); }
     else if (a === "pick-x") { PICK = null; refreshCard("kitchen"); }
@@ -538,6 +550,17 @@
     else if (a === "stock-x") { STOCKPICK = null; hold = false; refreshCard("pantry"); }
     else if (a === "stock-retry") loadStock();
     else if (a === "stock-used") { STOCKPICK = null; hold = false; if (STOCK.state !== "ok") { RCPT.phase = "error"; RCPT.msg = "Connect the database first."; refreshCard("pantry"); } else { try { await api("/stock/used", "POST", { id: d.id }); } catch (err) { STOCK.err = String(err.message || err); } await loadStock(); } }
+    else if (a === "ev-rename") { const e = EV.list[EVPICK]; if (e) { ADD.mode = "rename"; ADD.renameId = e.id; ADD.renameFrom = e.what; listen("event"); } }
+    else if (a === "ev-type") { const e = EV.list[EVPICK]; if (!e) return; const n = (window.prompt("New name for “" + e.what + "”", e.what) || "").trim();
+      if (n && n !== e.what) { ADD.mode = "rename"; setAdd({ phase: "confirm", target: "event", text: n, plan: { action: "rename", event_id: e.id, new_title: n, say: "Rename “" + e.what + "” to “" + n + "”" } }); } }
+    else if (a === "suggest") runSuggest("something good for dinner tonight");
+    else if (a === "suggest-use") runSuggest("use up what is about to expire in the pantry");
+    else if (a === "sug-open") { SUG.open = SUG.open === +d.i ? -1 : +d.i; refreshCard("kitchen"); }
+    else if (a === "sug-close") { SUG.phase = "idle"; hold = false; refreshCard("kitchen"); }
+    else if (a === "sug-retry") runSuggest(SUG.request);
+    else if (a === "sug-plan") { const s = SUG.list[+d.i]; if (s) { SUG.phase = "idle"; PICK = s.name; hold = false; refreshCard("kitchen"); } }
+    else if (a === "sug-save") { const s = SUG.list[+d.i]; if (s) { try { await api("/meal-idea", "POST", { name: s.name }); SUG.saved[+d.i] = true; SUG.note = ""; loadMeals(); } catch (err) { SUG.note = String(err.message || err); } refreshCard("kitchen"); } }
+    else if (a === "sug-say") { const s = SUG.list[+d.i]; if (s) speak(`${s.name}. ${s.why} ${s.time_min ? "It takes " + s.time_min + " minutes. " : ""}Ingredients: ${s.ingredients.join(", ")}. ${s.steps.map((x, k) => "Step " + (k + 1) + ". " + x).join(" ")}`); }
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
@@ -560,6 +583,25 @@
     catch (e) { console.warn("meals:", e.message || e); MEALS.err = String(e.message || e); }   // the Kitchen card shows why it can't read the database
     refreshCard("kitchen");
   }
+  /* ===== Claude suggests dishes: "suggest a pumpkin recipe", tap 💡, or "cook with what's expiring" ===== */
+  const SUG = { phase: "idle", request: "", list: [], open: -1, msg: "", note: "", saved: {} };
+  async function runSuggest(request) {
+    setAdd({ phase: "idle", target: "meal" });
+    Object.assign(SUG, { phase: "loading", request, list: [], open: -1, msg: "", note: "", saved: {} });
+    const i = CARDS.findIndex(c => c.id === "kitchen"); if (i >= 0) go(i);
+    hold = true; refreshCard("kitchen");
+    try { SUG.list = (await api("/suggest", "POST", { request })).suggestions; SUG.phase = "ok"; }
+    catch (e) { SUG.phase = "error"; SUG.msg = String(e.message || e); }
+    hold = true; refreshCard("kitchen");
+  }
+  const sugPanel = () => `<h2>Claude suggests${SUG.request ? " · “" + esc(SUG.request.slice(0, 60)) + "”" : ""} <button class="addbtn" data-act="sug-close" style="margin-left:auto;text-transform:none;letter-spacing:0">Close</button></h2>`
+    + (SUG.note ? `<div class="warnbox">⚠ ${esc(SUG.note)}</div>` : "")
+    + (SUG.phase === "loading" ? `<p class="big">🍳 Thinking…</p><p class="sub">Looking at your pantry and what you ate lately. About 10 seconds.</p>`
+      : SUG.phase === "error" ? `<div class="warnbox">⚠ ${esc(SUG.msg)}</div><div class="addbar"><button class="addbtn" data-act="sug-retry">Try again</button></div>`
+      : `<div class="sugs">${SUG.list.map((s, i) => `<div class="sug"><div class="sh"><b>${esc(s.name)}</b><span>${s.time_min ? "⏱ " + s.time_min + " min" : ""}</span></div><p>${esc(s.why)}</p>`
+        + (s.uses.length ? `<div class="chips" style="margin:.2rem 0 .6rem">${s.uses.map(u => `<span class="chip dimchip">${foodEmoji(u)} ${esc(u)}</span>`).join("")}</div>` : "")
+        + (SUG.open === i ? `<div class="rec"><div class="sec">Ingredients</div><p>${s.ingredients.map(esc).join(" · ")}</p><div class="sec">Steps</div><ol>${s.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol></div>` : "")
+        + `<div class="sa"><button class="addbtn" data-act="sug-open" data-i="${i}">${SUG.open === i ? "Hide recipe" : "📖 Recipe"}</button><button class="addbtn go" data-act="sug-plan" data-i="${i}">📅 Plan</button><button class="addbtn" data-act="sug-save" data-i="${i}">${SUG.saved[i] ? "Saved ✓" : "💡 Save"}</button><button class="addbtn" data-act="sug-say" data-i="${i}" title="Read aloud">🔊</button></div></div>`).join("")}</div>`);
   const lev = (a, b) => { const m = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { let prev = m[0]; m[0] = i; for (let j = 1; j <= b.length; j++) { const tmp = m[j]; m[j] = Math.min(m[j] + 1, m[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; } } return m[b.length]; };
   function snapMeal(n) {                 // "lazania" -> "Lasagna": snap to a meal you already log when it is a near match
     const k = n.toLowerCase(); let best = n, bd = 99;
@@ -569,6 +611,8 @@
   const WD = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   function parseMeal(t) {
     t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1), now = new Date(), DAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday";
+    if (/^(?:please |hey |ok |okay )?(?:suggest|recommend|give me|find me|show me|what (?:should|can|could|do) we (?:cook|eat|have|make)|what(?:'s| is) for dinner|how about|what about|any ideas|ideas for|i(?:'d| would) like|i want|we want|something |a recipe|recipe for|cook something|make something)/i.test(t)
+      || (/\brecipes?\b/i.test(t) && !/^(?:we |i )?(?:ate|had|cooked|made|plan|add|save)\b/i.test(t))) return { action: "suggest", request: t };
     let m = t.match(/^(?:add |save |new |remember )?(?:a )?(?:meal )?idea[:,]?\s+(.+)$/i) || t.match(/^(?:add|save)\s+(.+?)\s+(?:to|as)\s+(?:my |our |the )?(?:meal )?ideas$/i);
     if (m) return { action: "idea", name: cap(m[1]) };
     m = t.match(/^(?:we |i )?(?:used up|used|finished|ran out of|are out of|threw away|threw out|got rid of)\s+(?:the |our |all the |some )?(.+)$/i);
@@ -583,10 +627,11 @@
       return { action: "eat", name: snapMeal(cap(m[1])), date: ymd(addDays(now, off)), off }; }
     return null;
   }
-  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
+  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "suggest" ? `Ask Claude: “${m.request}”` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
     : `Log “${m.name}” as eaten at home${m.off ? (m.off === -1 ? " yesterday" : ` ${-m.off} days ago`) : ""}`;
   async function saveMeal() {
     const m = parseMeal(ADD.text);
+    if (m && m.action === "suggest") return runSuggest(m.request);
     if (!m) return setAdd({ phase: "error", msg: "Try “we ate lasagna” or “plan lasagna for Friday”." });
     if (MEALS.state !== "ok") return setAdd({ phase: "error", msg: "Connect the database first (see the setup notes)." });
     setAdd({ phase: "saving" });
@@ -598,7 +643,7 @@
   }
   // One status bar for both voice flows (calendar events and meals).
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
-    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna yesterday”, “plan lasagna for Friday” or “add idea risotto”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
+    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna yesterday”, “plan lasagna for Friday” or “add idea risotto”" : ADD.mode === "rename" ? "the new name for “" + ADD.renameFrom + "”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
     : ADD.phase === "confirm" && target === "event" && ADD.plan && ADD.plan.action === "none" ? "⚠ " + esc(ADD.plan.say || "I couldn't work out what to change.") + ' <button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>'
     : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : ADD.plan && ADD.plan.say ? ADD.plan.say : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>`
     : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="mic-mode">' + (micMode() === "cloud" ? "Try browser voice" : "Use cloud voice") + '</button><button class="addbtn" data-act="no">OK</button>';
@@ -648,7 +693,7 @@
       .replace(/(^|[\s,(])(\${1,4})(?=[\s,.)]|$)/g, (m, pre, s) => pre + px[s])
       .replace(/(\d+)\s*°\s*F?/g, "$1 degrees").replace(/°/g, " degrees")
       .replace(/(\d)\s*mph\b/gi, "$1 miles per hour").replace(/\bAQI\b/g, "air quality index").replace(/\bPM\s?2\.5\b/gi, "fine particles")
-      .replace(/(\d+)\s*min\b/g, "$1 minute")
+      .replace(/(\d+)\s*min\b/g, "$1 minute").replace(/\btbsp\b/gi, "tablespoon").replace(/\btsp\b/gi, "teaspoon").replace(/\boz\b/gi, "ounces").replace(/\blbs?\b/gi, "pounds").replace(/\b1\/2\b/g, "one half").replace(/\b1\/4\b/g, "one quarter").replace(/\b3\/4\b/g, "three quarters").replace(/(\d+)\/(\d+)/g, "$1 over $2")
       .replace(/(\d{1,2}(?::\d{2})?)\s*([AaPp])(?:\.[Mm]\.|[Mm])(?![A-Za-z])/g, (m, n, ap) => n + " " + ap.toUpperCase() + " M")
       .replace(/(\d+(?:\.\d+)?)\s*%/g, "$1 percent").replace(/&/g, " and ").replace(/×/g, " times ").replace(/[·—–|•]/g, ", ").replace(/→/g, " to ").replace(/…/g, ".")
       .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{21FF}\u{2300}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, "")
@@ -674,6 +719,7 @@
   }
   const dayWord = (d) => { const n = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - addDays(new Date(), 0)) / 864e5); return n === 0 ? "today" : n === 1 ? "tomorrow" : "on " + d.toLocaleDateString("en-US", { weekday: "long" }); };
   function sayFor(id) {       // what each card says out loud, written like speech rather than read off the screen
+    if (id === "kitchen" && SUG.phase === "ok") return "Claude suggests: " + SUG.list.map(s => s.name).join(", ") + ". Tap Recipe, or the speaker on one, for the details.";
     if (id === "kitchen") { const p = MEALS.plan.find(x => x.planned_for === ymd(new Date())), g = MEALS.gaps.slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`);
       const st = MEALS.gaps.filter(x => !x.idea).slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`), idea = MEALS.gaps.filter(x => x.idea).slice(0, 2).map(x => x.name);
       return (p ? `Tonight's plan is ${p.name}. ` : "Nothing is planned for tonight. ") + (st.length ? `You haven't had ${st.join(", or ")}. ` : "") + (idea.length ? `Ideas you haven't tried yet: ${idea.join(", ")}. ` : "") + (st.length || idea.length ? "Want to plan one?" : ""); }
