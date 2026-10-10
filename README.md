@@ -7,6 +7,7 @@ A wall-mounted household display. One calm card at a time, rotating every 30 sec
 - **A pull surface, not a push one.** The screen never asks for input. Everything on it is filled automatically from services, with the one exception of adding a calendar event by voice.
 - **One card, one question.** What's coming up? What should we cook? Where do we eat? How is the money? Each card answers one of these.
 - **Quiet AI.** Plain code does the math and fetching. Claude is used only where judgement or wording helps (currently: picking dinner places).
+- **Everything can be dismissed.** Every item on a screen has a small ✕ (pantry items, suggestions, restaurants, heads-up cards, calendar events, shopping items).
 - **You stay in control of the pace.** A pause button stops the card rotation; tap the icons to jump anywhere.
 - **It can speak.** A button reads the current card aloud, and an optional daily 5 PM announcement reads the dinner suggestion and heads-ups, using the browser's built-in text-to-speech.
 - **Honest about what is real.** Any card still showing sample data is clearly marked with an amber dashed border and a DRAFT ribbon.
@@ -22,7 +23,7 @@ A wall-mounted household display. One calm card at a time, rotating every 30 sec
 | Food | Kitchen | 7-day dinner plan, suggestions (meals not had in a while and saved ideas), what we ate at home with how long ago, and "suggest a pumpkin recipe": three Claude-written dishes with recipes that use what is in the pantry. Log, plan or save by voice or tap | Database (`food_meal`, `food_meal_plan`, `food_recipe`), Claude, Wikipedia photos | Live once the database is connected |
 | Food | Pantry | What is in the house, soonest to expire first, filled by photographing grocery receipts with the tablet camera; tap or say when something is used up | Claude reads the receipt photo; database (`food_stock`, `food_receipt`, `food_product`) | Live once the database is connected |
 | Food | Eat out | Two dinner ideas with hours, address and a dish to try, with a "New ideas" button | Claude with web search | Live |
-| Food | Shopping | Shopping list with pictures | Sample data, Wikipedia photos | Draft |
+| Food | Shopping | The shopping list as picture tiles; add by voice ("add milk and eggs"), tick off by tap or voice, and scanned receipts tick items off automatically | Database (`food_list`, `food_list_item`), Wikipedia photos | Live once the database is connected |
 | Money | Money | Spending this month vs budget, per-category bars, pace through the month, last month at the same point, biggest merchant; a limited-privacy view hides amounts | Your bank's CSV, imported with `finance_admin_v5.html`; Claude categorizes new merchants | Live once the database is connected |
 
 ## How it works

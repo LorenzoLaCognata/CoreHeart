@@ -13,6 +13,8 @@
 //   GET /meals    recent meals (with days since), meals not had in a while, dinner plan.
 //   POST /meals {name, plan_id?}   log a meal eaten at home.
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
+//   GET /shopping  the open shopping list;  POST /shopping/add {names} /update {id,status} /remove {id|names} /bought {names} /clear
+//   POST /stock/remove {id}  POST /meal-idea/remove {name}  POST /cards/dismiss {id}   delete or dismiss an entry from its screen.
 //   GET /money    this month's spending by category vs budget (the Money card).
 //   GET /money/setup  accounts, categories with budgets, merchants (finance admin page).
 //   POST /money/import {account, kind, rows}   bank CSV rows -> transactions, categorized (history first, then Claude Haiku for new merchants).
@@ -81,6 +83,8 @@ export default {
     if (url.pathname === "/events/quick" && request.method === "POST") return handleQuickAdd(request, env, allowedOrigin);
     if (request.method === "POST" && ["/events/parse", "/events/update", "/events/delete"].includes(url.pathname)) return handleEventEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
+    if (url.pathname === "/shopping" && request.method === "GET") return handleShopping(env, allowedOrigin);
+    if (request.method === "POST" && ["/shopping/add", "/shopping/update", "/shopping/remove", "/shopping/bought", "/shopping/clear", "/stock/remove", "/meal-idea/remove", "/cards/dismiss"].includes(url.pathname)) return handleListEdit(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/money" && request.method === "GET") return handleMoney(env, allowedOrigin);
     if (url.pathname === "/money/setup" && request.method === "GET") return handleMoneySetup(env, allowedOrigin);
     if (request.method === "POST" && ["/money/import", "/money/budget", "/money/recategorize"].includes(url.pathname)) return handleMoneyWrite(url.pathname, request, env, allowedOrigin);
@@ -295,6 +299,79 @@ async function handleCards(env, allowedOrigin, force) {
   }
 }
 
+// ---- Shopping list: one open list, filled by voice or taps; delete/dismiss endpoints for other screens ----
+const CAT_GUESS = [[/milk|cheese|yogurt|yoghurt|butter|egg|cream|ricotta|mozzarella|parmesan/i, "Dairy & eggs"], [/apple|banana|lemon|lime|orange|tomato|spinach|salad|lettuce|zucchini|cucumber|potato|onion|garlic|carrot|pepper|basil|herb|fruit|veg|mushroom|avocado|pumpkin/i, "Produce"],
+  [/chicken|beef|pork|steak|sausage|ham|bacon|fish|salmon|tuna|shrimp|turkey/i, "Meat & fish"], [/bread|bagel|bun|roll|croissant|flour/i, "Bakery"], [/frozen|ice cream|pizza/i, "Frozen"],
+  [/water|juice|wine|beer|coffee|tea|soda|cola/i, "Drinks"], [/paper|soap|detergent|shampoo|toilet|tissue|sponge|trash|bag/i, "Household"], [/pasta|rice|oil|sugar|salt|sauce|beans|cereal|nuts|honey|jam|spice/i, "Pantry"]];
+const guessCategory = (n) => (CAT_GUESS.find(([re]) => re.test(n)) || [])[1] || null;
+const cleanItem = (s) => { const t = String(s || "").replace(/^(?:some|a|an|the|more)\s+/i, "").replace(/[.!?]+$/, "").trim().slice(0, 60); return t ? t[0].toUpperCase() + t.slice(1) : ""; };
+async function openList(env, create) {
+  let [l] = await sb(env, "food_list?select=id&status=eq.open&limit=1");
+  if (!l && create) [l] = await sb(env, "food_list", { method: "POST", prefer: "return=representation", body: { name: "Shopping list" } });
+  return l || null;
+}
+async function loadShopping(env) {
+  const l = await openList(env, false); if (!l) return [];
+  const rows = await sb(env, `food_list_item?select=id,product_id,label,qty,status&list_id=eq.${l.id}&limit=200`), pids = [...new Set(rows.map((r) => r.product_id).filter(Boolean))];
+  const [prods, cats] = await Promise.all([pids.length ? sb(env, `food_product?select=id,name,name_en,category_id&id=in.(${pids.join(",")})`) : [], sb(env, "food_category?select=id,name_en,emoji&limit=100")]);
+  const pm = new Map(prods.map((p) => [p.id, p])), cm = new Map(cats.map((c) => [c.id, c]));
+  return rows.map((r) => { const p = pm.get(r.product_id), c = p && cm.get(p.category_id);
+    return { id: r.id, name: p ? p.name : r.label, name_en: p ? p.name_en || p.name : r.label, category: c ? c.name_en : "", emoji: c ? c.emoji : "", qty: r.qty, status: r.status }; })
+    .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === "wanted" ? -1 : 1));
+}
+async function handleShopping(env, allowedOrigin) {
+  try { return jsonResponse({ items: await loadShopping(env) }, 200, allowedOrigin); }
+  catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
+}
+async function handleListEdit(path, request, env, allowedOrigin) {
+  try {
+    const b = await request.json(), isId = (s) => /^[0-9a-f-]{36}$/i.test(s || ""), names = (Array.isArray(b.names) ? b.names : []).map(cleanItem).filter(Boolean).slice(0, 12);
+    let out = { ok: true };
+    if (path === "/stock/remove") { if (!isId(b.id)) throw new Error("Bad id."); await sb(env, `food_stock?id=eq.${b.id}`, { method: "DELETE" }); lastCards = 0; }
+    else if (path === "/cards/dismiss") { if (!isId(b.id)) throw new Error("Bad id."); await sb(env, `core_card?id=eq.${b.id}`, { method: "PATCH", body: { expires_at: new Date().toISOString() } }); }   // stays hidden until the underlying reason clears
+    else if (path === "/meal-idea/remove") {
+      const n = String(b.name || "").trim().toLowerCase(), hit = (await sb(env, "food_recipe?select=id,name&limit=200")).find((r) => r.name.toLowerCase() === n);
+      if (hit) await sb(env, `food_recipe?id=eq.${hit.id}`, { method: "DELETE" }); lastCards = 0;
+    }
+    else if (path === "/shopping/add") {
+      if (!names.length) throw new Error("Tell me what to add.");
+      const l = await openList(env, true), items = await sb(env, `food_list_item?select=id,product_id,status&list_id=eq.${l.id}&limit=200`);
+      const [prods, cats] = await Promise.all([sb(env, "food_product?select=id,name,name_en&limit=2000"), sb(env, "food_category?select=id,name_en&limit=100")]);
+      const byName = new Map(); prods.forEach((p) => { byName.set(p.name.toLowerCase(), p); if (p.name_en) byName.set(p.name_en.toLowerCase(), p); });
+      const wanted = new Set(items.filter((i) => i.status === "wanted").map((i) => i.product_id)), added = [], duplicates = [], rows = [];
+      for (const n of names) {
+        let p = byName.get(n.toLowerCase());
+        if (!p) { [p] = await sb(env, "food_product", { method: "POST", prefer: "return=representation", body: { name: n, name_en: n, category_id: cats.find((c) => c.name_en === guessCategory(n))?.id || null } }); byName.set(n.toLowerCase(), p); }
+        if (wanted.has(p.id)) { duplicates.push(n); continue; }
+        wanted.add(p.id); added.push(n);
+        const back = items.find((i) => i.product_id === p.id && i.status === "bought");      // bought before, needed again
+        if (back) await sb(env, `food_list_item?id=eq.${back.id}`, { method: "PATCH", body: { status: "wanted" } }); else rows.push({ list_id: l.id, product_id: p.id, qty: 1, status: "wanted" });
+      }
+      if (rows.length) await sb(env, "food_list_item", { method: "POST", body: rows });
+      out = { ok: true, added, duplicates };
+    }
+    else if (path === "/shopping/update") {
+      if (!isId(b.id) || !["wanted", "bought"].includes(b.status)) throw new Error("Bad request.");
+      await sb(env, `food_list_item?id=eq.${b.id}`, { method: "PATCH", body: { status: b.status } });
+    }
+    else if (path === "/shopping/remove" || path === "/shopping/bought") {
+      const list = await loadShopping(env), hits = [];
+      if (isId(b.id)) { const it = list.find((i) => i.id === b.id); if (it) hits.push(it); }
+      for (const n of names) {
+        const k = n.toLowerCase().replace(/s$/, ""), it = list.find((i) => { const x = (i.name_en || i.name).toLowerCase(), y = i.name.toLowerCase(); return x.includes(k) || y.includes(k) || k.includes(x.replace(/s$/, "")); });
+        if (!it) throw new Error(`I couldn't find “${n}” on the list.`); hits.push(it);
+      }
+      if (!hits.length) throw new Error("Nothing to change.");
+      for (const it of hits) await sb(env, `food_list_item?id=eq.${it.id}`, path === "/shopping/remove" ? { method: "DELETE" } : { method: "PATCH", body: { status: "bought" } });
+      out = { ok: true, matched: hits.map((h) => h.name) };
+    }
+    else if (path === "/shopping/clear") { const l = await openList(env, false); if (l) await sb(env, `food_list_item?list_id=eq.${l.id}&status=eq.bought`, { method: "DELETE" }); }
+    return jsonResponse(out, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
+  }
+}
+
 // ---- Money: bank CSV in, categories (history first, Claude for new merchants), budgets, and the month summary ----
 const MONEY_MODEL = "claude-haiku-4-5-20251001";
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -494,6 +571,10 @@ Today is ${today}. If the image is not a receipt or is unreadable, reply {"error
     await sb(env, "food_receipt_line", { method: "POST", body: items.map((i) => ({ receipt_id: receipt.id, product_id: byName.get(i.name.toLowerCase()).id, raw_text: i.raw || i.name, qty: i.qty, line_total: i.line_total })) });
     const stock = items.filter((i) => i.is_food).map((i) => { const p = byName.get(i.name.toLowerCase()); return { product_id: p.id, qty: i.qty, purchased_on: when, expires_on: addDay(when, p.shelf_life_days || i.shelf) }; });
     if (stock.length) await sb(env, "food_stock", { method: "POST", body: stock });
+    try {
+      const l = await openList(env, false), ids = [...new Set(items.map((i) => byName.get(i.name.toLowerCase())?.id).filter(Boolean))];
+      if (l && ids.length) await sb(env, `food_list_item?list_id=eq.${l.id}&status=eq.wanted&product_id=in.(${ids.join(",")})`, { method: "PATCH", body: { status: "bought" } });
+    } catch (e) { /* the list is optional */ }
     lastCards = 0;
     return jsonResponse({ ok: true, store, total, added: items.length, stocked: stock.length, soon: stock.filter((s) => daysBetween(s.expires_on, today) <= 7).length }, 200, allowedOrigin);
   } catch (err) {
@@ -680,8 +761,10 @@ const EAT_TTL = 12 * 3600e3, EAT_MIN_GAP = 10 * 60e3;
 
 async function handleEatOut(request, env, allowedOrigin) {
   const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const avoid = (new URL(request.url).searchParams.get("avoid") || "").split("|").map((s) => s.trim().slice(0, 60)).filter(Boolean).slice(0, 30);
   const age = Date.now() - eatCache.at;
-  if (eatCache.body && ((!fresh && age < EAT_TTL) || (fresh && age < EAT_MIN_GAP))) {
+  const hasDismissed = !!eatCache.body && eatCache.body.places.some((p) => avoid.includes(p.name));      // a place you dismissed is in the saved picks: make new ones
+  if (eatCache.body && ((!fresh && age < EAT_TTL) || (fresh && age < EAT_MIN_GAP && !hasDismissed))) {
     return jsonResponse({ ...eatCache.body, cached: true }, 200, allowedOrigin);
   }
 
@@ -700,6 +783,7 @@ async function handleEatOut(request, env, allowedOrigin) {
     `now or will be open this evening, with different cuisines from each other. Verify opening hours with a ` +
     `search; if you can't confirm them, say "hours unverified" in the hours field. ` +
     (toTry.length ? `If any fit, prefer places from their to-try list: ${toTry.map((p) => `${p.name} (${p.cuisine || "?"})`).join(", ")}. ` : "") +
+    (avoid.length ? `Do not suggest any of these places, the household dismissed them: ${avoid.join(", ")}. ` : "") +
     `Respond ONLY with valid JSON, no markdown fences, no preamble, in exactly this shape: ` +
     `{"places":[{"name":"","kind":"cuisine","price":"$ to $$$$","rating":"e.g. 4.5 (only if found in search, else empty)","walk":"e.g. 8 min walk","hours":"e.g. Open until 10 PM","addr":"street address","dish":"one dish worth ordering","why":"max 14 words on why it suits tonight"}]}`;
 

@@ -171,6 +171,10 @@
   .sug > p { margin: .3rem 0 .6rem; color: var(--dim); font-size: 1.05rem; line-height: 1.35; }
   .sug .rec { font-size: .95rem; line-height: 1.4; overflow-y: auto; margin-bottom: .6rem; } .sug .rec p { margin: .2rem 0 .6rem; } .sug .rec ol { margin: .2rem 0; padding-left: 1.2rem; }
   .sug .sa { margin-top: auto; display: flex; gap: .4rem; flex-wrap: wrap; } .sug .sa .addbtn { padding: .5rem .8rem; font-size: .95rem; }
+  .x { background: none; border: 0; color: var(--dim); font-size: .85rem; line-height: 1; padding: .2rem .35rem; cursor: pointer; opacity: .75; } .x:active { color: var(--text); }
+  .chipx { display: inline-flex; align-items: center; gap: .1rem; padding: .35rem .45rem .35rem .95rem; } .chipx .cl { background: none; border: 0; color: inherit; font: inherit; padding: 0; cursor: pointer; }
+  .si { position: relative; } .si .sx { position: absolute; top: .35rem; right: .35rem; } .si .sb { background: none; border: 0; color: inherit; font: inherit; width: 100%; padding: 0; cursor: pointer; }
+  .si.got { opacity: .45; } .si.got b { text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -238,7 +242,7 @@
   const tag = () => '<span class="tag draft">✏️ DRAFT · sample</span>';
   // Picture slot: pass an image URL later for real photos; until then a colored emoji tile.
   const pic = (e, bg, img) => img ? `<img class="pic" src="${esc(img)}" alt="">` : `<div class="pic" style="--bg:${bg || "var(--accent)"}">${e}</div>`;
-  const CAT_BG = { Dairy: "#64b5f6", Bakery: "#ffb74d", Produce: "#9ccc65", Pantry: "#a1887f" };
+  const CAT_BG = { Dairy: "#64b5f6", "Dairy & eggs": "#64b5f6", Bakery: "#ffb74d", Produce: "#9ccc65", Pantry: "#a1887f", "Meat & fish": "#e57373", Frozen: "#4dd0e1", Drinks: "#ba68c8", Household: "#90a4ae" };
   const foodEmoji = (n) => { n = n.toLowerCase(); return /milk|yogurt|yoghurt|cream/.test(n) ? "🥛" : /egg/.test(n) ? "🥚" : /bread|bun|roll/.test(n) ? "🍞" : /chicken|turkey/.test(n) ? "🍗" : /beef|steak|pork|ham|sausage|bacon/.test(n) ? "🥩" : /fish|salmon|tuna|shrimp/.test(n) ? "🐟"
     : /tomato/.test(n) ? "🍅" : /spinach|salad|lettuce|kale|greens|basil|herb/.test(n) ? "🥬" : /zucchini|cucumber/.test(n) ? "🥒" : /cheese|ricotta|mozzarella|parmesan|parmigiano/.test(n) ? "🧀" : /apple/.test(n) ? "🍎" : /banana/.test(n) ? "🍌"
     : /pasta|spaghetti|noodle/.test(n) ? "🍝" : /rice/.test(n) ? "🍚" : /butter/.test(n) ? "🧈" : /potato/.test(n) ? "🥔" : /carrot/.test(n) ? "🥕" : /lemon|lime|orange/.test(n) ? "🍋" : "🥫"; };
@@ -248,7 +252,7 @@
   const CARDS = [
     { id: "headsup", icon: "🔔", label: "Heads-up", accent: "#ffca28", render: () => { if (HEADS.state === "loading") return `<h2>Heads-up</h2><p class="sub">Loading…</p>`; const live = HEADS.state === "ok";
       return `<h2>Heads-up ${live ? '<span class="tag">Live</span>' : tag()}</h2>` + (HEADS.list.length
-        ? HEADS.list.slice(0, 5).map(c => `<div class="ev"><span class="ee">${esc(c.icon || "🔔")}</span><div><div class="ew">${esc(c.body || "")}</div>${esc(c.headline)}</div></div>`).join("")
+        ? HEADS.list.slice(0, 5).map((c, i) => `<div class="ev"><span class="ee">${esc(c.icon || "🔔")}</span><div><div class="ew">${esc(c.body || "")}</div>${esc(c.headline)}</div><button class="x" data-act="card-x" data-i="${i}" title="Dismiss" style="margin-left:auto">✕</button></div>`).join("")
         : `<p class="big">Nothing needs your attention ✨</p>`); } },
 
     { id: "events", icon: "📅", label: "Calendar", accent: "#64b5f6", render: () => {
@@ -265,7 +269,7 @@
       return `<h2>Calendar ${live ? '<span class="tag">Live · Google Calendar</span>' : EV.state === "loading" ? "" : tag()}</h2>
       <div style="display:grid;grid-template-columns:minmax(0,.9fr) 1.2fr;gap:2rem;flex:1;min-height:0">
         <div><div class="mon">${now.toLocaleDateString([], { month: "long", year: "numeric" })}</div><div class="cal">${cells}</div></div>
-        <div>${EV.list.slice(0, 5).map((e, i) => `<div class="ev ${i === EVPICK ? "sel" : ""}" data-act="ev-pick" data-i="${i}"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span></div>`).join("") || (EV.state === "loading" ? '<p class="sub">Loading…</p>' : '<p class="sub">Nothing coming up.</p>')}</div>
+        <div>${EV.list.slice(0, 5).map((e, i) => `<div class="ev ${i === EVPICK ? "sel" : ""}" data-act="ev-pick" data-i="${i}"><span class="ee">${e.e}</span><div><div class="ew">${lbl(e.date)} · ${e.time}</div>${esc(e.what)}</div><span class="m">${esc(e.where)}</span><button class="x" data-act="ev-x" data-i="${i}" title="Delete this event">✕</button></div>`).join("") || (EV.state === "loading" ? '<p class="sub">Loading…</p>' : '<p class="sub">Nothing coming up.</p>')}</div>
       </div>
       <div class="addbar">${bar}</div>`; } },
 
@@ -282,7 +286,7 @@
       ${MEALS.err ? `<div class="warnbox">⚠ Can't read the meals database: ${esc(MEALS.err)} <button class="addbtn" data-act="meals-retry">Retry</button></div>` : ""}
       <div class="sec">Dinner plan</div><div class="plan">${tiles}</div>
       <div class="grid2" style="margin-top:1.1rem;flex:1;min-height:0">
-        <div><div class="sec">Suggestions · tap to plan</div><div class="chips" style="margin-top:.4rem">${MEALS.gaps.map(g => `<button class="chip gap" data-act="pick" data-name="${esc(g.name)}">${esc(g.name)} · ${g.idea ? "idea" : g.days_since + " days"}</button>`).join("") || '<span class="sub">Nothing to suggest yet. Say “add idea risotto”, or log what you ate.</span>'}</div></div>
+        <div><div class="sec">Suggestions · tap to plan ${HIDDEN.size ? `<button class="x" data-act="sug-unhide" title="Show the hidden suggestions again">↺ ${HIDDEN.size} hidden</button>` : ""}</div><div class="chips" style="margin-top:.4rem">${visGaps().map(g => `<span class="chip gap chipx"><button class="cl" data-act="pick" data-name="${esc(g.name)}">${esc(g.name)} · ${g.idea ? "idea" : g.days_since + " days"}</button><button class="x" data-act="sug-hide" data-name="${esc(g.name)}" data-idea="${g.idea ? 1 : 0}" title="${g.idea ? "Delete this idea" : "Stop suggesting this"}">✕</button></span>`).join("") || '<span class="sub">Nothing to suggest yet. Say “add idea risotto”, or log what you ate.</span>'}</div></div>
         <div><div class="sec">We ate</div>${MEALS.recent.slice(0, 4).map(m => `<div class="row" style="font-size:1.05rem;padding:.45rem 0"><span class="k" style="width:7rem">${ago(m.days_since)}</span>${esc(m.name)}${m.id ? ` <button class="rm" data-act="meal-rm" data-id="${esc(m.id)}" title="Remove this entry">✕</button>` : ""}</div>`).join("") || '<span class="sub">Nothing logged yet. Say “we ate lasagna”.</span>'}</div>
       </div>
       <div class="addbar">${bar}</div>`; } },
@@ -299,21 +303,27 @@
       return `<h2>Pantry · ${STOCK.items.length} in the house ${live ? '<span class="tag">Live</span>' : tag()}</h2>
       ${STOCK.err ? `<div class="warnbox">⚠ Can't read the pantry: ${esc(STOCK.err)} <button class="addbtn" data-act="stock-retry">Retry</button></div>` : ""}
       <div class="sec">Use it up · tap when used</div>
-      <div class="chips" style="margin-top:.4rem">${soon.map(i => `<button class="chip ${i.days_left <= 2 ? "warn" : ""}" data-act="stock-pick" data-id="${esc(i.id)}">${foodEmoji(i.name)} ${esc(i.name)} · ${when(i.days_left)}</button>`).join("") || '<span class="sub">Nothing is about to expire.</span>'}</div>
+      <div class="chips" style="margin-top:.4rem">${soon.map(i => `<span class="chip chipx ${i.days_left <= 2 ? "warn" : ""}"><button class="cl" data-act="stock-pick" data-id="${esc(i.id)}">${foodEmoji(i.name)} ${esc(i.name)} · ${when(i.days_left)}</button><button class="x" data-act="stock-del" data-id="${esc(i.id)}" title="Remove from the pantry">✕</button></span>`).join("") || '<span class="sub">Nothing is about to expire.</span>'}</div>
       <div class="sec" style="margin-top:1.3rem">Also in the house</div>
-      <div class="chips" style="margin-top:.4rem">${rest.slice(0, 24).map(i => `<button class="chip dimchip" data-act="stock-pick" data-id="${esc(i.id)}">${esc(i.name)}</button>`).join("") || '<span class="sub">Nothing else yet. Scan a receipt to fill the pantry.</span>'}</div>
+      <div class="chips" style="margin-top:.4rem">${rest.slice(0, 24).map(i => `<span class="chip dimchip chipx"><button class="cl" data-act="stock-pick" data-id="${esc(i.id)}">${esc(i.name)}</button><button class="x" data-act="stock-del" data-id="${esc(i.id)}" title="Remove from the pantry">✕</button></span>`).join("") || '<span class="sub">Nothing else yet. Scan a receipt to fill the pantry.</span>'}</div>
       <div class="addbar">${bar}</div>`; } },
 
-    { id: "shop", icon: "🛒", label: "Shopping", accent: "#4caf7d", render: () => `
-      <h2>Shopping list · ${DUMMY.shopping.length} items ${tag()}</h2>
-      <div class="shop">${DUMMY.shopping.map(i => `<div class="si">${pic(i[1], CAT_BG[i[2]], PHOTO[i[3]])}<b>${i[0]}</b><span>${i[2]}</span></div>`).join("")}</div>` },
+    { id: "shop", icon: "🛒", label: "Shopping", accent: "#4caf7d", render: () => {
+      if (SHOP.state === "loading") return `<h2>Shopping list</h2><p class="sub">Loading…</p>`;
+      const live = SHOP.state === "ok", want = SHOP.items.filter(i => i.status === "wanted"), got = SHOP.items.length - want.length;
+      const tile = (i) => `<div class="si ${i.status === "bought" ? "got" : ""}"><button class="x sx" data-act="shop-rm" data-id="${esc(i.id)}" title="Remove from the list">✕</button><button class="sb" data-act="shop-toggle" data-id="${esc(i.id)}" title="Tap when bought">${pic(i.emoji || "🛒", CAT_BG[i.category], PHOTO[i.name_en])}<b>${esc(i.name)}</b><span>${esc(i.category)}</span></button></div>`;
+      const bar = voiceBar(`<button class="addbtn" data-act="add-meal">🎤 Add items</button>${got ? '<button class="addbtn" data-act="shop-clear">🧹 Clear bought</button>' : ""} <span>“add milk and eggs” · tap an item once you have it · “we bought the milk”</span>`, "meal");
+      return `<h2>Shopping list · ${want.length} to get ${live ? '<span class="tag">Live</span>' : tag()}</h2>
+      ${SHOP.err ? `<div class="warnbox">⚠ Can't read the shopping list: ${esc(SHOP.err)} <button class="addbtn" data-act="shop-retry">Retry</button></div>` : ""}
+      <div class="shop">${SHOP.items.map(tile).join("") || '<p class="sub">The list is empty. Say “add milk and eggs”.</p>'}</div>
+      <div class="addbar">${bar}</div>`; } },
 
     { id: "eatout", icon: "📍", label: "Eat out", accent: "#f06292", render: () => { if (EAT.state === "loading") return `<h2>Where to eat tonight</h2><p class="big">🔎 Finding ideas…</p><p class="sub">Claude is checking what's open nearby. About 15 seconds.</p>`; const live = EAT.state === "ok"; return `
       <h2>Where to eat tonight <span class="tag ${live ? "" : "draft"}">${live ? "Live · Claude" : "✏️ DRAFT · sample"}</span></h2>
-      <div class="grid2">${EAT.places.map(p => `<div class="tile">
+      <div class="grid2">${EAT.places.map((p, i) => `<div class="tile" style="position:relative"><button class="x" data-act="eat-x" data-i="${i}" title="Don't suggest this place" style="position:absolute;top:.5rem;right:.6rem">✕</button>
         <div style="display:flex;gap:1rem;align-items:center">${pic(cuisineEmoji(p), "#f06292", p.img)}<div><h3 style="margin:0">${esc(p.name)}</h3><p>${esc([p.kind, p.price].filter(Boolean).join(" · "))}${p.rating ? " · ⭐ " + esc(p.rating) : ""}</p></div></div>
         <div class="det" style="margin-top:.9rem">${p.walk ? `<span>🚶 ${esc(p.walk)}</span>` : ""}${p.hours ? `<span>🕒 ${esc(p.hours)}</span>` : ""}${p.addr ? `<span>📍 ${esc(p.addr)}</span>` : ""}${p.dish ? `<span>🍴 Try: ${esc(p.dish)}</span>` : ""}</div>
-        ${p.why ? `<p style="color:var(--text);margin-top:.8rem">${esc(p.why)}</p>` : ""}</div>`).join("")}</div>
+        ${p.why ? `<p style="color:var(--text);margin-top:.8rem">${esc(p.why)}</p>` : ""}</div>`).join("") || '<p class="sub">All dismissed. Tap New ideas for more.</p>'}</div>
       <div class="addbar">${eatBar()}</div>`; } },
 
     { id: "weather", icon: "☀️", label: "Weather", accent: "#4dd0e1", render: () => { const w = WX;
@@ -365,6 +375,7 @@
   const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
   const dayLabel = (s) => { const d = new Date(s + "T00:00"), n = Math.round((d - addDays(new Date(), 0)) / 864e5); return n === 0 ? "Today" : n === 1 ? "Tomorrow" : d.toLocaleDateString([], { weekday: "short" }); };
 
+  let EAT_AVOID = []; try { EAT_AVOID = JSON.parse(localStorage.getItem("eat_avoid") || "[]"); } catch (e) {}      // places you dismissed: Claude is told not to suggest them again
   let EAT = (() => { try { const c = JSON.parse(localStorage.getItem("eat_cache") || "null");      // recent picks are shown at once; otherwise "loading", never a flash of samples
     if (c && Date.now() - Date.parse(c.generated_at) < 12 * 3600e3) return { state: "ok", places: c.places, at: c.generated_at }; } catch (e) {} return { state: "loading", places: [] }; })();
   let EATBUSY = false;
@@ -378,10 +389,10 @@
         if (c && Date.now() - Date.parse(c.generated_at) < EAT_TTL_MS) { EAT = { state: "ok", places: c.places, at: c.generated_at }; refreshCard("eatout"); return; } } catch (e) {}
     } else { EATBUSY = true; hold = true; refreshCard("eatout"); }
     try {
-      const r = await fetch(WORKER_URL + "/eat-out" + (fresh ? "?fresh=1" : ""), { headers: { "X-Hub-Secret": hubKey() } });
+      const r = await fetch(WORKER_URL + "/eat-out" + (fresh ? "?fresh=1&avoid=" + encodeURIComponent(EAT_AVOID.join("|")) : ""), { headers: { "X-Hub-Secret": hubKey() } });
       const j = await r.json();
       if (!r.ok || j.error || !Array.isArray(j.places) || !j.places.length) throw new Error(j.message || r.status);
-      EAT = { state: "ok", places: j.places.slice(0, 2), at: j.generated_at, note: fresh && j.cached ? "already refreshed a few minutes ago" : "" };
+      EAT = { state: "ok", places: j.places.filter(p => !EAT_AVOID.includes(p.name)).slice(0, 2), at: j.generated_at, note: fresh && j.cached ? "already refreshed a few minutes ago" : "" };
       try { localStorage.setItem(EAT_KEY, JSON.stringify({ places: EAT.places, generated_at: j.generated_at })); } catch (e) {}
     } catch (e) { console.warn("eat-out:", e.message || e); if (EAT.state === "loading") EAT = { state: "sample", places: DUMMY.eatOut }; else if (fresh) EAT.note = "couldn't get new ideas"; }
     EATBUSY = false; hold = ["listening", "confirm", "saving"].includes(ADD.phase); if (fresh) left = DWELL;
@@ -396,7 +407,7 @@
   const ADD = { phase: "idle", text: "", msg: "", target: "event", ready: false, plan: null, mode: "", renameId: "", renameFrom: "" };
   let EVPICK = null, EVDEL = false;      // the calendar entry being edited, and whether Delete was tapped once
   let hold = false;                                   // pauses card rotation while you're adding an event
-  const refreshVoice = () => { if (ADD.target === "meal") { refreshCard("kitchen"); refreshCard("pantry"); } else refreshCard("events"); };   // meal voice commands work from Kitchen and Pantry
+  const refreshVoice = () => { if (ADD.target === "meal") { refreshCard("kitchen"); refreshCard("pantry"); refreshCard("shop"); } else refreshCard("events"); };   // meal voice commands work from Kitchen and Pantry
   const refreshCard = (id) => { const el = cards()[cur]; if (el && CARDS[cur].id === id) { if (!(CARDS[cur].keep && el.innerHTML)) el.innerHTML = CARDS[cur].render(); fitMap(); } };
   async function loadEvents() {
     try {
@@ -571,6 +582,20 @@
     else if (a === "sug-save") { const s = SUG.list[+d.i]; if (s) { try { await api("/meal-idea", "POST", { name: s.name }); SUG.saved[+d.i] = true; SUG.note = ""; loadMeals(); } catch (err) { SUG.note = String(err.message || err); } refreshCard("kitchen"); } }
     else if (a === "sug-say") { const s = SUG.list[+d.i]; if (s) speak(`${s.name}. ${s.why} ${s.time_min ? "It takes " + s.time_min + " minutes. " : ""}Ingredients: ${s.ingredients.join(", ")}. ${s.steps.map((x, k) => "Step " + (k + 1) + ". " + x).join(" ")}`); }
     else if (a === "money-retry") loadMoney();
+    else if (a === "stock-del") { STOCK.items = STOCK.items.filter(i => i.id !== d.id); refreshCard("pantry"); if (STOCK.state === "ok") { try { await api("/stock/remove", "POST", { id: d.id }); } catch (err) { STOCK.err = String(err.message || err); } loadStock(); } }
+    else if (a === "sug-hide") {
+      if (d.idea === "1") { if (needDb()) return; MEALS.gaps = MEALS.gaps.filter(g => g.name !== d.name); refreshCard("kitchen"); try { await api("/meal-idea/remove", "POST", { name: d.name }); } catch (err) { MEALS.err = String(err.message || err); } loadMeals(); }
+      else { HIDDEN.add(d.name.toLowerCase()); saveHidden(); refreshCard("kitchen"); } }
+    else if (a === "sug-unhide") { HIDDEN.clear(); saveHidden(); refreshCard("kitchen"); }
+    else if (a === "eat-x") { const p = EAT.places[+d.i]; if (p) { EAT_AVOID = [p.name, ...EAT_AVOID.filter(n => n !== p.name)].slice(0, 30); try { localStorage.setItem("eat_avoid", JSON.stringify(EAT_AVOID)); } catch (e) {}
+      EAT.places.splice(+d.i, 1); try { const c = JSON.parse(localStorage.getItem("eat_cache") || "null"); if (c) { c.places = EAT.places; localStorage.setItem("eat_cache", JSON.stringify(c)); } } catch (e) {} refreshCard("eatout"); } }
+    else if (a === "card-x") { const c = HEADS.list[+d.i]; if (!c) return; HEADS.list.splice(+d.i, 1); refreshCard("headsup"); if (HEADS.state === "ok" && c.id) { try { await api("/cards/dismiss", "POST", { id: c.id }); } catch (err) { console.warn("dismiss:", err.message || err); } } }
+    else if (a === "ev-x") { const e = EV.list[+d.i]; if (EV.state !== "ok" || !e || !e.id) setAdd({ phase: "error", msg: "Connect Google Calendar to delete events.", target: "event" }); else { EVPICK = +d.i; EVDEL = true; hold = true; refreshCard("events"); } }
+    else if (a === "shop-toggle") { const it = SHOP.items.find(i => i.id === d.id); if (!it) return; it.status = it.status === "bought" ? "wanted" : "bought"; refreshCard("shop");
+      if (SHOP.state === "ok") { try { await api("/shopping/update", "POST", { id: it.id, status: it.status }); } catch (err) { SHOP.err = String(err.message || err); } loadShop(); } }
+    else if (a === "shop-rm") { SHOP.items = SHOP.items.filter(i => i.id !== d.id); refreshCard("shop"); if (SHOP.state === "ok") { try { await api("/shopping/remove", "POST", { id: d.id }); } catch (err) { SHOP.err = String(err.message || err); } loadShop(); } }
+    else if (a === "shop-clear") { SHOP.items = SHOP.items.filter(i => i.status !== "bought"); refreshCard("shop"); if (SHOP.state === "ok") { try { await api("/shopping/clear", "POST", {}); } catch (err) { SHOP.err = String(err.message || err); } loadShop(); } }
+    else if (a === "shop-retry") loadShop();
     else if (a === "plan-rm") { if (!needDb()) await mealCall("/meal-plan/remove", { id: d.id }); }
     else if (a === "map-select") { MAPSEL = !MAPSEL; hold = MAPSEL; left = DWELL; fitMap(); }          // 911 map: box in the part to show
     else if (a === "map-reset") { MAPCROP = null; MAPSEL = false; hold = false; try { localStorage.removeItem("map_crop"); } catch (e) {} fitMap(); }
@@ -584,6 +609,9 @@
   });
 
   /* ===== meals: what we ate, how long ago, and the dinner plan ===== */
+  const HIDDEN = new Set((() => { try { return JSON.parse(localStorage.getItem("hidden_sugs") || "[]"); } catch (e) { return []; } })());
+  const saveHidden = () => { try { localStorage.setItem("hidden_sugs", JSON.stringify([...HIDDEN])); } catch (e) {} };
+  const visGaps = () => MEALS.gaps.filter(g => !HIDDEN.has(g.name.toLowerCase()));
   const sampleMeals = () => ({ recent: DUMMY.meals.recent, gaps: DUMMY.meals.gaps, plan: DUMMY.meals.plan.map((p, i) => ({ id: "s" + i, planned_for: ymd(addDays(new Date(), p.off)), meal_type: "dinner", name: p.name })) });
   let MEALS = { state: "loading", err: "", recent: [], gaps: [], plan: [] };
   let PICK = null;                                   // a suggestion waiting for you to choose a day
@@ -612,6 +640,7 @@
         + (s.uses.length ? `<div class="chips" style="margin:.2rem 0 .6rem">${s.uses.map(u => `<span class="chip dimchip">${foodEmoji(u)} ${esc(u)}</span>`).join("")}</div>` : "")
         + (SUG.open === i ? `<div class="rec"><div class="sec">Ingredients</div><p>${s.ingredients.map(esc).join(" · ")}</p><div class="sec">Steps</div><ol>${s.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol></div>` : "")
         + `<div class="sa"><button class="addbtn" data-act="sug-open" data-i="${i}">${SUG.open === i ? "Hide recipe" : "📖 Recipe"}</button><button class="addbtn go" data-act="sug-plan" data-i="${i}">📅 Plan</button><button class="addbtn" data-act="sug-save" data-i="${i}">${SUG.saved[i] ? "Saved ✓" : "💡 Save"}</button><button class="addbtn" data-act="sug-say" data-i="${i}" title="Read aloud">🔊</button></div></div>`).join("")}</div>`);
+  const splitItems = (s) => s.split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.replace(/^(?:some|a|an|the|more)\s+/i, "").trim()).filter(Boolean).slice(0, 12);
   const lev = (a, b) => { const m = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { let prev = m[0]; m[0] = i; for (let j = 1; j <= b.length; j++) { const tmp = m[j]; m[j] = Math.min(m[j] + 1, m[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; } } return m[b.length]; };
   function snapMeal(n) {                 // "lazania" -> "Lasagna": snap to a meal you already log when it is a near match
     const k = n.toLowerCase(); let best = n, bd = 99;
@@ -627,6 +656,12 @@
     if (m) return { action: "idea", name: cap(m[1]) };
     m = t.match(/^(?:we |i )?(?:used up|used|finished|ran out of|are out of|threw away|threw out|got rid of)\s+(?:the |our |all the |some )?(.+)$/i);
     if (m) return { action: "used", name: m[1].trim() };
+    m = t.match(/^(?:we |i )?(?:bought|got|picked up)\s+(?:the |some )?(.+)$/i);
+    if (m && !/^(?:we |i )?got to\b/i.test(t)) return { action: "bought", names: splitItems(m[1]) };
+    m = t.match(/^(?:please )?(?:remove|delete|take)\s+(.+?)\s+(?:from|off)\s+(?:the |our |my )?(?:shopping |grocery )?list$/i);
+    if (m) return { action: "unshop", names: splitItems(m[1]) };
+    m = t.match(/^(?:please )?(?:add|put|buy|get|we need|i need|pick up|don't forget)\s+(.+?)(?:\s+(?:to|on|onto)\s+(?:the |our |my )?(?:shopping |grocery )?list)?$/i);
+    if (m && !/^to\s/i.test(m[1])) return { action: "shop", names: splitItems(m[1]) };
     m = t.match(new RegExp("^(?:let'?s |we'?ll |we will )?(?:plan|have|cook|make)\\s+(.+?)\\s+(?:(?:for|on)\\s+)?(today|tonight|tomorrow|" + DAYS + ")$", "i"));
     if (m) { const w = m[2].toLowerCase(), n = w === "today" || w === "tonight" ? 0 : w === "tomorrow" ? 1 : ((WD.indexOf(w) - now.getDay() + 7) % 7 || 7);
       return { action: "plan", name: snapMeal(cap(m[1])), date: ymd(addDays(now, n)), when: w }; }
@@ -637,7 +672,7 @@
       return { action: "eat", name: snapMeal(cap(m[1])), date: ymd(addDays(now, off)), off }; }
     return null;
   }
-  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "suggest" ? `Ask Claude: “${m.request}”` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
+  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "shop" ? `Add ${m.names.map(n => "“" + n + "”").join(", ")} to the shopping list` : m.action === "bought" ? `Mark ${m.names.map(n => "“" + n + "”").join(", ")} as bought` : m.action === "unshop" ? `Remove ${m.names.map(n => "“" + n + "”").join(", ")} from the list` : m.action === "suggest" ? `Ask Claude: “${m.request}”` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
     : `Log “${m.name}” as eaten at home${m.off ? (m.off === -1 ? " yesterday" : ` ${-m.off} days ago`) : ""}`;
   async function saveMeal() {
     const m = parseMeal(ADD.text);
@@ -646,14 +681,14 @@
     if (MEALS.state !== "ok") return setAdd({ phase: "error", msg: "Connect the database first (see the setup notes)." });
     setAdd({ phase: "saving" });
     try {
-      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else if (m.action === "idea") await api("/meal-idea", "POST", { name: m.name }); else if (m.action === "used") { const j = await api("/stock/used", "POST", { name: m.name }); m.name = j.matched || m.name; loadStock(); } else await api("/meals", "POST", { name: m.name, eaten_on: m.date });
+      if (m.action === "plan") await api("/meal-plan", "POST", { date: m.date, name: m.name }); else if (m.action === "idea") await api("/meal-idea", "POST", { name: m.name }); else if (m.action === "shop") { await api("/shopping/add", "POST", { names: m.names }); loadShop(); } else if (m.action === "bought") { await api("/shopping/bought", "POST", { names: m.names }); loadShop(); } else if (m.action === "unshop") { await api("/shopping/remove", "POST", { names: m.names }); loadShop(); } else if (m.action === "used") { const j = await api("/stock/used", "POST", { name: m.name }); m.name = j.matched || m.name; loadStock(); } else await api("/meals", "POST", { name: m.name, eaten_on: m.date });
       setAdd({ phase: "done", msg: mealSummary(m) }); loadMeals();
       setTimeout(() => { if (ADD.phase === "done") setAdd({ phase: "idle" }); }, 6000);
     } catch (e) { setAdd({ phase: "error", msg: String(e.message || e) }); }
   }
   // One status bar for both voice flows (calendar events and meals).
   const voiceBar = (idle, target) => ADD.target !== target || ADD.phase === "idle" ? idle
-    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna yesterday”, “plan lasagna for Friday” or “add idea risotto”" : ADD.mode === "rename" ? "the new name for “" + ADD.renameFrom + "”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
+    : ADD.phase === "listening" ? (ADD.ready ? "🎙 Speak now: " : "🎙 Getting the microphone ready… ") + (target === "meal" ? "“we ate lasagna yesterday”, “plan lasagna for Friday”, “add milk and eggs” or “add idea risotto”" : ADD.mode === "rename" ? "the new name for “" + ADD.renameFrom + "”" : "“Dinner with Anna Friday at 7pm”") + (micMode() === "cloud" ? ' <button class="addbtn go" data-act="mic-done">Done</button><button class="addbtn" data-act="no">Cancel</button>' : "")
     : ADD.phase === "confirm" && target === "event" && ADD.plan && ADD.plan.action === "none" ? "⚠ " + esc(ADD.plan.say || "I couldn't work out what to change.") + ' <button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>'
     : ADD.phase === "confirm" ? `${esc(target === "meal" ? mealSummary(parseMeal(ADD.text)) : ADD.plan && ADD.plan.say ? ADD.plan.say : "Add “" + ADD.text + "”")}? <button class="addbtn go" data-act="yes">Yes</button><button class="addbtn" data-act="mic-again">Say it again</button><button class="addbtn" data-act="no">Cancel</button>`
     : ADD.phase === "testing" ? esc(ADD.msg) : ADD.phase === "saving" ? "Saving…" : ADD.phase === "done" ? "✅ " + esc(ADD.msg) : "⚠ " + esc(ADD.msg) + ' <button class="addbtn" data-act="mic-test">Test mic</button><button class="addbtn" data-act="mic-mode">' + (micMode() === "cloud" ? "Try browser voice" : "Use cloud voice") + '</button><button class="addbtn" data-act="no">OK</button>';
@@ -731,7 +766,7 @@
   function sayFor(id) {       // what each card says out loud, written like speech rather than read off the screen
     if (id === "kitchen" && SUG.phase === "ok") return "Claude suggests: " + SUG.list.map(s => s.name).join(", ") + ". Tap Recipe, or the speaker on one, for the details.";
     if (id === "kitchen") { const p = MEALS.plan.find(x => x.planned_for === ymd(new Date())), g = MEALS.gaps.slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`);
-      const st = MEALS.gaps.filter(x => !x.idea).slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`), idea = MEALS.gaps.filter(x => x.idea).slice(0, 2).map(x => x.name);
+      const st = visGaps().filter(x => !x.idea).slice(0, 2).map(x => `${x.name} in ${plural(x.days_since, "day")}`), idea = visGaps().filter(x => x.idea).slice(0, 2).map(x => x.name);
       return (p ? `Tonight's plan is ${p.name}. ` : "Nothing is planned for tonight. ") + (st.length ? `You haven't had ${st.join(", or ")}. ` : "") + (idea.length ? `Ideas you haven't tried yet: ${idea.join(", ")}. ` : "") + (st.length || idea.length ? "Want to plan one?" : ""); }
     if (id === "headsup") return HEADS.list.length ? "Heads up. " + HEADS.list.slice(0, 3).map(c => `${c.headline}, ${(c.body || "").toLowerCase()}.`).join(" ") : "Nothing needs your attention.";
     if (id === "events") { const l = EV.list.slice(0, 2).map(e => `${e.what} ${dayWord(e.date)}${e.time === "All day" ? ", all day" : " at " + e.time}`); return l.length ? "Coming up: " + l.join(". Then ") + "." : "Nothing is coming up."; }
@@ -741,7 +776,7 @@
         return [[p.name, p.kind, price[p.price], stars && `rated ${stars} stars`, p.walk, p.hours && p.hours.toLowerCase()].filter(Boolean).join(", ") + ".", p.dish && `Try the ${p.dish}.`, p.why && (/[.!?]$/.test(p.why) ? p.why : p.why + ".")].filter(Boolean).join(" "); }).join(" Or, ") ; }
     if (id === "pantry") { const soon = STOCK.items.filter(i => i.days_left !== null && i.days_left <= 7).slice(0, 4).map(i => `${i.name} ${i.days_left <= 0 ? "today" : i.days_left === 1 ? "tomorrow" : "in " + i.days_left + " days"}`);
       return soon.length ? "Use up soon: " + soon.join(", ") + "." : "Nothing in the pantry is about to expire."; }
-    if (id === "shop") return `You need ${plural(DUMMY.shopping.length, "thing")}: ` + DUMMY.shopping.map(i => i[3] || i[0]).join(", ") + ".";
+    if (id === "shop") { const w = SHOP.items.filter(i => i.status === "wanted"); return w.length ? `You need ${plural(w.length, "thing")}: ${w.map(i => i.name_en || i.name).join(", ")}.` : "The shopping list is empty."; }
     if (id === "money") { if (MONEY.state === "loading" || !MONEY.data || !MONEY.data.count) return "There are no transactions to report yet.";
       const m = MONEY.data, pct = m.budget_total ? Math.round(m.spent / m.budget_total * 100) : null, el = Math.round(m.day / m.days * 100), hot = m.categories.filter(c => c.budget && c.spent / c.budget >= 0.8).map(c => c.name);
       return (privacy ? "" : `You've spent ${Math.round(m.spent)} dollars so far this month. `) + (pct !== null ? `That's ${pct} percent of your budget, with ${el} percent of the month gone.` : `The month is ${el} percent over.`) + (hot.length ? ` ${hot.join(" and ")} ${hot.length > 1 ? "are" : "is"} running high.` : ""); }
@@ -793,6 +828,15 @@
     if (STOCK.state !== "ok") { RCPT.phase = "error"; RCPT.msg = "Connect the database first (see the setup notes)."; return refreshCard("pantry"); }
     try { await sendReceipt(await fileToJpegBase64(f)); } catch (err) { RCPT.phase = "error"; RCPT.msg = String(err.message || err); refreshCard("pantry"); }
   });
+
+  /* ===== shopping list (database) ===== */
+  const sampleShop = () => DUMMY.shopping.map((s, i) => ({ id: "s" + i, name: s[0], name_en: s[3], category: s[2], emoji: s[1], status: "wanted" }));
+  let SHOP = { state: "loading", err: "", items: [] };
+  async function loadShop() {
+    try { SHOP = { state: "ok", err: "", items: (await api("/shopping")).items }; }
+    catch (e) { console.warn("shop:", e.message || e); if (SHOP.state === "loading") SHOP = { state: "sample", err: String(e.message || e), items: sampleShop() }; else SHOP.err = String(e.message || e); }
+    SHOP.items.forEach(i => fetchPhoto(i.name_en)); refreshCard("shop");
+  }
 
   /* ===== money: real spending from the bank CSV import (finance admin page) ===== */
   const sampleMoney = () => ({ month: new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" }), day: 3, days: 31, spent: 205, income: 0, prev_spent: 180, budget_total: 1200, count: 12, data_through: null,
@@ -910,7 +954,7 @@
   loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
   loadEatOut(); setInterval(() => loadEatOut(), 6 * 60 * 60 * 1000);   // reuses the saved picks unless they're 12 h old
   loadEvents(); setInterval(loadEvents, 5 * 60 * 1000);
-  DUMMY.shopping.forEach(i => fetchPhoto(i[3]));
+  loadShop(); setInterval(loadShop, 5 * 60 * 1000);
   loadStock(); setInterval(loadStock, 10 * 60 * 1000);
   loadMoney(); setInterval(loadMoney, 30 * 60 * 1000);
   loadMeals(); setInterval(loadMeals, 10 * 60 * 1000);
