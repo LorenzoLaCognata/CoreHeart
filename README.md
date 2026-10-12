@@ -24,7 +24,7 @@ A wall-mounted household display. One calm card at a time, rotating every 30 sec
 | Food | Pantry | What is in the house, soonest to expire first, filled by photographing grocery receipts with the tablet camera; tap or say when something is used up; automatic "Restock?" suggestions for what you usually buy but haven't lately | Claude reads the receipt photo; database (`food_stock`, `food_receipt`, `food_product`) | Live once the database is connected |
 | Food | Eat out | Two dinner ideas with hours, address and a dish to try, with a "New ideas" button | Claude with web search | Live |
 | Food | Shopping | The shopping list as picture tiles; add by voice ("add milk and eggs"), tick off by tap or voice, and scanned receipts tick items off automatically | Database (`food_list`, `food_list_item`), Wikipedia photos | Live once the database is connected |
-| Money | Money | Spending vs budget for this month, last month or the last 3 months (buttons), per-category bars, pace through the month, comparison with the previous period, biggest merchant; a limited-privacy view hides amounts | Your bank's CSV, imported with `finance_admin_v5.html`; Claude categorizes new merchants | Live once the database is connected |
+| Money | Money | Spending vs budget for this month, last month, the last 3 months or this year to date (buttons), per-category bars, pace through the month, comparison with the previous period, biggest merchant; a limited-privacy view hides amounts | Your bank's CSV, imported with `finance_admin_v5.html`; Claude categorizes new merchants | Live once the database is connected |
 
 ## How it works
 

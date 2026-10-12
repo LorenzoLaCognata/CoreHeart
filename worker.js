@@ -15,7 +15,7 @@
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
 //   GET /shopping  the open shopping list;  POST /shopping/add {names} /update {id,status} /remove {id|names} /bought {names} /clear
 //   POST /stock/remove {id}  POST /meal-idea/remove {name}  POST /cards/dismiss {id}   delete or dismiss an entry from its screen.
-//   GET /money?period=this|last|3m   spending by category vs budget for this month, last month or the last 3 months (the Money card).
+//   GET /money?period=this|last|3m|year   spending by category vs budget for this month, last month, the last 3 months or this year to date (the Money card).
 //   GET /restock  things you used to buy regularly but haven't for a while (the Pantry card).
 //   GET /money/setup  accounts, categories with budgets, merchants (finance admin page).
 //   POST /money/import {account, kind, rows}   bank CSV rows -> transactions, categorized (history first, then Claude Haiku for new merchants).
@@ -423,6 +423,7 @@ async function moneyData(env, period = "this") {
   let start, end, label, months = 1, cmp = null, day = b.day, days = b.dim;
   if (period === "last") { const [y, m] = shiftMonth(b.y, b.m, -1), [py, pm] = shiftMonth(b.y, b.m, -2); start = ms(y, m); end = me(y, m); label = monthLabelOf(y, m); cmp = [ms(py, pm), me(py, pm)]; day = days = lastDayOf(y, m); }
   else if (period === "3m") { const [y, m] = shiftMonth(b.y, b.m, -2); start = ms(y, m); end = today; months = 3; label = `${new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })} – ${monthLabelOf(b.y, b.m)}`; }
+  else if (period === "year") { start = `${b.y}-01-01`; end = today; months = b.m; label = b.m === 1 ? monthLabelOf(b.y, 1) : `Jan – ${monthLabelOf(b.y, b.m)}`; cmp = [`${b.y - 1}-01-01`, `${b.y - 1}-${pad2w(b.m)}-${pad2w(Math.min(b.day, lastDayOf(b.y - 1, b.m)))}`]; }
   else { period = "this"; start = b.start; end = today; label = monthLabelOf(b.y, b.m); cmp = [b.prevStart, b.prevSame]; }
   const [cats, budgets, tx, prev, latest, earliest] = await Promise.all([
     sb(env, "money_category?select=id,name&limit=200"), sb(env, "money_budget?select=category_id,amount&limit=200"),

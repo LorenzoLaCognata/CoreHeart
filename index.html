@@ -345,7 +345,7 @@
     { id: "money", icon: "💰", label: "Money", accent: "#81c784", render: () => {
       if (MONEY.state === "loading") return `<h2>Money</h2><p class="sub">Loading…</p>`;
       const m = MONEY.data, live = MONEY.state === "ok", mo = (n) => money(Math.round(n)), isThis = !m.period || m.period === "this";
-      const seg = `<div class="seg">${[["this", "This month"], ["last", "Last month"], ["3m", "Last 3 months"]].map(([k, l]) => `<button class="${MONEYP === k ? "on" : ""}" data-act="money-period" data-p="${k}">${l}</button>`).join("")}</div>`;
+      const seg = `<div class="seg">${[["this", "This month"], ["last", "Last month"], ["3m", "Last 3 months"], ["year", "This year"]].map(([k, l]) => `<button class="${MONEYP === k ? "on" : ""}" data-act="money-period" data-p="${k}">${l}</button>`).join("")}</div>`;
       const head = `<h2>Spending · ${esc(m.label || m.month)} ${live ? '<span class="tag">Live</span>' : tag()}</h2>` + (MONEY.err ? `<div class="warnbox">⚠ Can't read the finance data: ${esc(MONEY.err)} <button class="addbtn" data-act="money-retry">Retry</button></div>` : "") + seg;
       if (!m.count) return head + (m.data_through ? `<p class="big">No transactions in this period</p><p class="sub">Your imported data runs from ${esc(m.data_from || "?")} to ${esc(m.data_through)}. Try another period above, or import a newer CSV.</p>`
         : `<p class="big">No transactions yet</p><p class="sub">Import your bank's CSV with the finance admin page (see the setup notes). Budgets are set there too.</p>`);
@@ -354,12 +354,12 @@
       const ring = `<div class="donut">${pct === null ? "" : `<svg viewBox="0 0 140 140" width="100%" height="100%" style="transform:rotate(-90deg)"><circle cx="70" cy="70" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="14"/><circle cx="70" cy="70" r="${R}" fill="none" stroke="${pct > 100 ? "#ff7043" : "var(--accent)"}" stroke-width="14" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${off}"/></svg>`}
         <div class="c"><div>${pct === null ? `<b style="font-size:2.2rem;font-weight:300">${mo(m.spent)}</b><br><span style="color:var(--dim)">spent</span>` : `<b style="font-size:2.8rem;font-weight:300">${pct}%</b><br><span style="color:var(--dim)">of budget</span>`}</div></div></div>`;
       const stat = (v, l) => `<div class="stat"><b style="font-size:1.6rem">${v}</b><span>${l}</span></div>`;
-      const sub = isThis ? `Day ${m.day} of ${m.days} · ${elapsed}% of the month${pct !== null && pct > elapsed + 5 ? "<br>a bit ahead of pace" : ""}` : m.period === "last" ? "Full month" : `${m.months} months`;
+      const sub = isThis ? `Day ${m.day} of ${m.days} · ${elapsed}% of the month${pct !== null && pct > elapsed + 5 ? "<br>a bit ahead of pace" : ""}` : m.period === "last" ? "Full month" : m.period === "year" ? `Year to date · ${m.months} month${m.months > 1 ? "s" : ""}` : `${m.months} months`;
       return head + `<div style="display:grid;grid-template-columns:auto 1fr;gap:2.4rem;align-items:center;flex:1;min-height:0">
         <div>${ring}<p class="sub" style="text-align:center">${sub}</p></div>
         <div>${m.categories.slice(0, 7).map(c => { const p = c.budget ? Math.round(c.spent / c.budget * 100) : null;
           return `<div class="cat ${p !== null && p >= 80 ? "hot" : ""}"><div class="l"><span>${esc(c.name)}</span><span>${privacy ? (p !== null ? p + "%" : "") : mo(c.spent) + (c.budget ? " of " + mo(c.budget) + " · " + p + "%" : "")}</span></div><div class="bar"><i style="width:${Math.min(100, p !== null ? p : Math.round(c.spent / mx * 100))}%"></i></div></div>`; }).join("")}
-          <div class="stats" style="margin-top:.8rem;gap:2rem">${privacy ? "" : stat(mo(m.spent), "spent" + (vs === null ? "" : " · " + (vs >= 0 ? "+" : "") + vs + "% vs " + (isThis ? "last month" : "the month before")))}${!privacy && m.income ? stat(mo(m.income), "income") : ""}${!privacy && m.top[0] ? stat(esc(m.top[0].merchant), "biggest: " + mo(m.top[0].amount)) : ""}</div></div></div>
+          <div class="stats" style="margin-top:.8rem;gap:2rem">${privacy ? "" : stat(mo(m.spent), "spent" + (vs === null ? "" : " · " + (vs >= 0 ? "+" : "") + vs + "% vs " + (isThis ? "last month" : m.period === "year" ? "the same period last year" : "the month before")))}${!privacy && m.income ? stat(mo(m.income), "income") : ""}${!privacy && m.top[0] ? stat(esc(m.top[0].merchant), "biggest: " + mo(m.top[0].amount)) : ""}</div></div></div>
         <div class="foot">${m.data_through ? "Bank data through " + esc(m.data_through) + ". Import the next CSV to update." : ""}</div>`; } },
 
     { id: "safety", icon: "🚨", label: "911", accent: "#ef5350", keep: true, render: () => `
