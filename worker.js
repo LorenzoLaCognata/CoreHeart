@@ -15,7 +15,8 @@
 //   POST /meal-plan {date, name}   plan a dinner;  POST /meal-plan/remove {id}.
 //   GET /shopping  the open shopping list;  POST /shopping/add {names} /update {id,status} /remove {id|names} /bought {names} /clear
 //   POST /stock/remove {id}  POST /meal-idea/remove {name}  POST /cards/dismiss {id}   delete or dismiss an entry from its screen.
-//   GET /money    this month's spending by category vs budget (the Money card).
+//   GET /money?period=this|last|3m   spending by category vs budget for this month, last month or the last 3 months (the Money card).
+//   GET /restock  things you used to buy regularly but haven't for a while (the Pantry card).
 //   GET /money/setup  accounts, categories with budgets, merchants (finance admin page).
 //   POST /money/import {account, kind, rows}   bank CSV rows -> transactions, categorized (history first, then Claude Haiku for new merchants).
 //   POST /money/budget {category, amount}   POST /money/recategorize {merchant, category}
@@ -85,7 +86,8 @@ export default {
     if (url.pathname === "/transcribe" && request.method === "POST") return handleTranscribe(request, env, allowedOrigin);
     if (url.pathname === "/shopping" && request.method === "GET") return handleShopping(env, allowedOrigin);
     if (request.method === "POST" && ["/shopping/add", "/shopping/update", "/shopping/remove", "/shopping/bought", "/shopping/clear", "/stock/remove", "/meal-idea/remove", "/cards/dismiss"].includes(url.pathname)) return handleListEdit(url.pathname, request, env, allowedOrigin);
-    if (url.pathname === "/money" && request.method === "GET") return handleMoney(env, allowedOrigin);
+    if (url.pathname === "/money" && request.method === "GET") return handleMoney(env, allowedOrigin, url.searchParams.get("period"));
+    if (url.pathname === "/restock" && request.method === "GET") return handleRestock(env, allowedOrigin);
     if (url.pathname === "/money/setup" && request.method === "GET") return handleMoneySetup(env, allowedOrigin);
     if (request.method === "POST" && ["/money/import", "/money/budget", "/money/recategorize"].includes(url.pathname)) return handleMoneyWrite(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/suggest" && request.method === "POST") return handleSuggest(request, env, allowedOrigin);
@@ -189,6 +191,7 @@ const HOME_TZ = "America/Chicago";   // the household's time zone, for "today" a
 const todayStr = () => new Date().toLocaleDateString("en-CA", { timeZone: HOME_TZ });
 const daysBetween = (a, b) => Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 864e5);
 
+const spanText = (d) => (d <= 60 ? `${d} days` : `${Math.round(d / 30)} months`);
 const dbHint = (msg) => /PGRST|42P01|does not exist|Could not find|schema cache/i.test(msg) ? `The database tables aren't set up yet: run schema.sql in the Supabase SQL Editor. (${msg})`
   : /401|403|Invalid API key|JWT/i.test(msg) ? `Supabase refused the key: check that SUPABASE_SERVICE_KEY is the service_role key. (${msg})`
   : /Invalid URL|fetch failed|must be set/i.test(msg) ? `Check the SUPABASE_URL and SUPABASE_SERVICE_KEY secrets on the Worker. (${msg})` : msg;
@@ -208,17 +211,24 @@ async function sb(env, path, { method = "GET", body, prefer } = {}) {
 // Recent meals, meals not had for a week or more (but not in the last 60 days), and the dinner plan.
 async function loadMealData(env) {
   const today = todayStr();
-  const [recent, all, plan, recipes] = await Promise.all([
+  const [recent, hist, plan, recipes] = await Promise.all([
     sb(env, "food_meal?select=id,name,eaten_on&order=eaten_on.desc&limit=8"),
-    sb(env, "v_meal_gaps?select=name,last_eaten_on,times_eaten&limit=200"),
+    sb(env, "food_meal?select=name,eaten_on&order=eaten_on.asc&limit=4000"),
     sb(env, `food_meal_plan?select=id,planned_for,name,status&status=eq.planned&planned_for=gte.${today}&order=planned_for.asc&limit=14`),
     sb(env, "food_recipe?select=id,name&limit=100"),
   ]);
-  const planned = new Set(plan.map((p) => p.name.toLowerCase())), eaten = new Set(all.map((g) => g.name.toLowerCase()));
-  const stale = all.map((g) => ({ name: g.name, days_since: daysBetween(today, g.last_eaten_on), times: g.times_eaten }))
-    .filter((g) => g.days_since >= 7 && g.days_since <= 60 && !planned.has(g.name.toLowerCase())).sort((a, b) => b.days_since - a.days_since);
-  const ideas = recipes.filter((r) => !eaten.has(r.name.toLowerCase()) && !planned.has(r.name.toLowerCase())).map((r) => ({ name: r.name, days_since: null, idea: true }));
-  return { recent: recent.map((m) => ({ ...m, days_since: daysBetween(today, m.eaten_on) })), gaps: [...stale, ...ideas].slice(0, 8), plan };
+  const planned = new Set(plan.map((p) => p.name.toLowerCase())), by = new Map();
+  for (const m of hist) { const k = m.name.toLowerCase(), e = by.get(k) || { name: m.name, dates: new Set() }; e.name = m.name; e.dates.add(m.eaten_on); by.set(k, e); }
+  // Suggest what you haven't had for a while, most overdue first: how long since, compared with how often you usually have it.
+  const stale = [];
+  for (const [k, e] of by) {
+    const ds = [...e.dates].sort(), n = ds.length, since = daysBetween(today, ds[n - 1]), avg = n >= 2 ? daysBetween(ds[n - 1], ds[0]) / (n - 1) : null;
+    if (planned.has(k) || since < 7 || since > 365) continue;
+    stale.push({ name: e.name, days_since: since, usual: avg ? Math.round(avg) : null, times: n, score: avg ? since / avg : Math.min(since, 60) / 30 });      // one-off meals count for less than a regular that is overdue
+  }
+  stale.sort((a, b) => b.score - a.score);
+  const ideas = recipes.filter((r) => !by.has(r.name.toLowerCase()) && !planned.has(r.name.toLowerCase())).map((r) => ({ name: r.name, days_since: null, idea: true }));
+  return { recent: recent.map((m) => ({ ...m, days_since: daysBetween(today, m.eaten_on) })), gaps: [...stale.map(({ score, ...r }) => r), ...ideas].slice(0, 8), plan };
 }
 async function handleMeals(env, allowedOrigin) {
   try { return jsonResponse(await loadMealData(env), 200, allowedOrigin); }
@@ -264,7 +274,7 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
 
 // Card refresh: turn the database's "worth your attention" feed into rows the tablet can read.
 let lastCards = 0;
-const MANAGED_KINDS = ["reminder", "stock", "item", "meal_gap", "meal_plan", "budget"];
+const MANAGED_KINDS = ["reminder", "stock", "item", "meal_gap", "meal_plan", "budget", "restock"];
 async function refreshCards(env) {
   const started = new Date().toISOString(), today = todayStr();
   const ICON = { core: "🔔", food: "🥬", home: "🏠" };
@@ -278,7 +288,10 @@ async function refreshCards(env) {
   meals.plan.filter((p) => p.planned_for === today).forEach((p) =>
     cards.push({ domain: "food", kind: "meal_plan", dedupe_key: p.id, headline: `Tonight: ${p.name}`, body: "On the dinner plan", icon: "🍽️", priority: 80, refreshed_at: started }));
   meals.gaps.filter((g) => !g.idea).slice(0, 2).forEach((g) =>
-    cards.push({ domain: "food", kind: "meal_gap", dedupe_key: g.name.toLowerCase(), headline: `${g.name}: not had in ${g.days_since} days`, body: "Plan it this week?", icon: "🍽️", priority: 40, refreshed_at: started }));
+    cards.push({ domain: "food", kind: "meal_gap", dedupe_key: g.name.toLowerCase(), headline: `${g.name}: not had in ${spanText(g.days_since)}`, body: "Plan it this week?", icon: "🍽️", priority: 40, refreshed_at: started }));
+  try {      // things you buy regularly and haven't bought for a while
+    (await loadRestock(env)).slice(0, 2).forEach((r) => cards.push({ domain: "food", kind: "restock", dedupe_key: r.name.toLowerCase(), headline: `Restock ${r.name}?`, body: `Last bought ${spanText(r.days_since)} ago${r.usual ? ` (usually every ${r.usual} days)` : ""}`, icon: "🛒", priority: 45, refreshed_at: started }));
+  } catch (e) { /* no receipt history yet */ }
   try {      // a card when a category is close to or over its monthly budget (percentages only, so nothing private shows on the wall)
     const mo = await moneyData(env);
     mo.categories.filter((c) => c.budget && c.spent >= c.budget * 0.9).slice(0, 2).forEach((c) => cards.push({ domain: "money", kind: "budget", dedupe_key: c.name.toLowerCase(),
@@ -297,6 +310,28 @@ async function handleCards(env, allowedOrigin, force) {
   } catch (err) {
     return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
   }
+}
+
+// ---- Restock suggestions: from receipt history, what you used to buy but haven't lately ----
+async function loadRestock(env) {
+  const today = todayStr();
+  const [lines, rcpts, prods, stock] = await Promise.all([sb(env, "food_receipt_line?select=product_id,receipt_id&limit=8000"), sb(env, "food_receipt?select=id,purchased_at&limit=3000"),
+    sb(env, "food_product?select=id,name&limit=3000"), sb(env, "food_stock?select=product_id&status=eq.in_stock&limit=1000")]);
+  const rdate = new Map(rcpts.map((r) => [r.id, String(r.purchased_at).slice(0, 10)])), name = new Map(prods.map((p) => [p.id, p.name])), inStock = new Set(stock.map((s) => s.product_id)), onList = new Set();
+  try { (await loadShopping(env)).filter((i) => i.status === "wanted").forEach((i) => onList.add(i.name.toLowerCase())); } catch (e) {}
+  const dates = new Map();
+  for (const l of lines) { const d = rdate.get(l.receipt_id); if (!d || !l.product_id) continue; if (!dates.has(l.product_id)) dates.set(l.product_id, new Set()); dates.get(l.product_id).add(d); }
+  const out = [];
+  for (const [pid, set] of dates) {
+    const ds = [...set].sort(), n = ds.length, since = daysBetween(today, ds[n - 1]), avg = n >= 2 ? daysBetween(ds[n - 1], ds[0]) / (n - 1) : null, nm = name.get(pid);
+    if (!nm || inStock.has(pid) || onList.has(nm.toLowerCase()) || since > 365) continue;
+    if (avg ? since >= Math.max(7, avg * 1.3) : since >= 30) out.push({ name: nm, days_since: since, usual: avg ? Math.round(avg) : null, score: avg ? since / avg : Math.min(since, 60) / 30 });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 8).map(({ score, ...r }) => r);
+}
+async function handleRestock(env, allowedOrigin) {
+  try { return jsonResponse({ items: await loadRestock(env) }, 200, allowedOrigin); }
+  catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
 }
 
 // ---- Shopping list: one open list, filled by voice or taps; delete/dismiss endpoints for other screens ----
@@ -380,13 +415,20 @@ function monthBounds(today) {
   const y = +today.slice(0, 4), m = +today.slice(5, 7), day = +today.slice(8), py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1, pdim = new Date(Date.UTC(py, pm, 0)).getUTCDate();
   return { y, m, day, dim: new Date(Date.UTC(y, m, 0)).getUTCDate(), start: `${y}-${pad2w(m)}-01`, prevStart: `${py}-${pad2w(pm)}-01`, prevSame: `${py}-${pad2w(pm)}-${pad2w(Math.min(day, pdim))}` };
 }
-async function moneyData(env) {
-  const today = todayStr(), b = monthBounds(today);
-  const [cats, budgets, tx, prev, latest] = await Promise.all([
+const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const monthLabelOf = (y, m) => new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+const shiftMonth = (y, m, d) => { const t = y * 12 + (m - 1) + d; return [Math.floor(t / 12), (t % 12) + 1]; };
+async function moneyData(env, period = "this") {
+  const today = todayStr(), b = monthBounds(today), ms = (y, m) => `${y}-${pad2w(m)}-01`, me = (y, m) => `${y}-${pad2w(m)}-${pad2w(lastDayOf(y, m))}`;
+  let start, end, label, months = 1, cmp = null, day = b.day, days = b.dim;
+  if (period === "last") { const [y, m] = shiftMonth(b.y, b.m, -1), [py, pm] = shiftMonth(b.y, b.m, -2); start = ms(y, m); end = me(y, m); label = monthLabelOf(y, m); cmp = [ms(py, pm), me(py, pm)]; day = days = lastDayOf(y, m); }
+  else if (period === "3m") { const [y, m] = shiftMonth(b.y, b.m, -2); start = ms(y, m); end = today; months = 3; label = `${new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", { month: "short", timeZone: "UTC" })} – ${monthLabelOf(b.y, b.m)}`; }
+  else { period = "this"; start = b.start; end = today; label = monthLabelOf(b.y, b.m); cmp = [b.prevStart, b.prevSame]; }
+  const [cats, budgets, tx, prev, latest, earliest] = await Promise.all([
     sb(env, "money_category?select=id,name&limit=200"), sb(env, "money_budget?select=category_id,amount&limit=200"),
-    sb(env, `money_transaction?select=posted_on,amount,merchant,category_id&posted_on=gte.${b.start}&limit=5000`),
-    sb(env, `money_transaction?select=amount,category_id&posted_on=gte.${b.prevStart}&posted_on=lte.${b.prevSame}&limit=5000`),
-    sb(env, "money_transaction?select=posted_on&order=posted_on.desc&limit=1"),
+    sb(env, `money_transaction?select=posted_on,amount,merchant,category_id&posted_on=gte.${start}&posted_on=lte.${end}&limit=8000`),
+    cmp ? sb(env, `money_transaction?select=amount,category_id&posted_on=gte.${cmp[0]}&posted_on=lte.${cmp[1]}&limit=8000`) : Promise.resolve(null),
+    sb(env, "money_transaction?select=posted_on&order=posted_on.desc&limit=1"), sb(env, "money_transaction?select=posted_on&order=posted_on.asc&limit=1"),
   ]);
   const name = new Map(cats.map((c) => [c.id, c.name])), nm = (t) => (name.get(t.category_id) || "").toLowerCase();
   const isSpend = (t) => Number(t.amount) < 0 && nm(t) !== "transfers" && nm(t) !== "income";      // transfers and card payments are not spending
@@ -396,15 +438,16 @@ async function moneyData(env) {
     if (!isSpend(t)) continue;
     spent -= a; const k = name.get(t.category_id) || "Other"; by.set(k, (by.get(k) || 0) - a); merchants.set(t.merchant || "?", (merchants.get(t.merchant || "?") || 0) - a);
   }
-  const bud = new Map(budgets.map((x) => [name.get(x.category_id), Number(x.amount)]));
-  return { month: new Date(Date.UTC(b.y, b.m - 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }), day: b.day, days: b.dim,
-    spent: round2(spent), income: round2(income), prev_spent: round2(prev.filter(isSpend).reduce((a, t) => a - Number(t.amount), 0)),
-    budget_total: round2([...bud.values()].reduce((a, x) => a + x, 0)), has_budgets: bud.size > 0, count: tx.length, data_through: latest[0]?.posted_on || null,
+  const bud = new Map(budgets.map((x) => [name.get(x.category_id), Number(x.amount) * months])), through = latest[0]?.posted_on || null;
+  let suggest = null;      // nothing this month but data exists: tell the tablet which period to open on
+  if (!tx.length && through && period === "this") { const [ly, lm] = shiftMonth(b.y, b.m, -1), [ty, tm] = shiftMonth(b.y, b.m, -2); suggest = through >= ms(ly, lm) ? "last" : through >= ms(ty, tm) ? "3m" : null; }
+  return { period, label, month: label, months, day, days, spent: round2(spent), income: round2(income), prev_spent: prev ? round2(prev.filter(isSpend).reduce((a, t) => a - Number(t.amount), 0)) : null,
+    budget_total: round2([...bud.values()].reduce((a, x) => a + x, 0)), has_budgets: bud.size > 0, count: tx.length, data_from: earliest[0]?.posted_on || null, data_through: through, suggest_period: suggest,
     categories: [...new Set([...by.keys(), ...bud.keys()])].filter(Boolean).map((n) => ({ name: n, spent: round2(by.get(n) || 0), budget: bud.get(n) ?? null })).sort((a, b) => b.spent - a.spent),
     top: [...merchants].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([merchant, amount]) => ({ merchant, amount: round2(amount) })) };
 }
-async function handleMoney(env, allowedOrigin) {
-  try { return jsonResponse(await moneyData(env), 200, allowedOrigin); }
+async function handleMoney(env, allowedOrigin, period) {
+  try { return jsonResponse(await moneyData(env, period || "this"), 200, allowedOrigin); }
   catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
 }
 async function handleMoneySetup(env, allowedOrigin) {
