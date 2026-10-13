@@ -171,6 +171,11 @@
   .sug > p { margin: .3rem 0 .6rem; color: var(--dim); font-size: 1.05rem; line-height: 1.35; }
   .sug .rec { font-size: .95rem; line-height: 1.4; overflow-y: auto; margin-bottom: .6rem; } .sug .rec p { margin: .2rem 0 .6rem; } .sug .rec ol { margin: .2rem 0; padding-left: 1.2rem; }
   .sug .sa { margin-top: auto; display: flex; gap: .4rem; flex-wrap: wrap; } .sug .sa .addbtn { padding: .5rem .8rem; font-size: .95rem; }
+  .pwk { display: grid; gap: .45rem; flex: 1; min-height: 0; overflow-y: auto; align-content: start; }
+  .pw { display: grid; grid-template-columns: 6rem 1fr auto; align-items: center; gap: 1rem; padding: .5rem 1rem; border-radius: 1rem; border: 1px solid var(--line); border-left: 4px solid var(--accent); background: rgba(255,255,255,.05); }
+  .pw .pl { color: var(--accent); font-size: .85rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .pw b { display: block; font-size: 1.15rem; font-weight: 500; } .pw .pn { display: block; color: var(--dim); font-size: .95rem; line-height: 1.3; }
+  .pw.off { opacity: .4; } .pw.kept { opacity: .65; border-left-color: var(--dim); }
   .x { background: none; border: 0; color: var(--dim); font-size: .85rem; line-height: 1; padding: .2rem .35rem; cursor: pointer; opacity: .75; } .x:active { color: var(--text); }
   .chipx { display: inline-flex; align-items: center; gap: .1rem; padding: .35rem .45rem .35rem .95rem; } .chipx .cl { background: none; border: 0; color: inherit; font: inherit; padding: 0; cursor: pointer; }
   .si { position: relative; } .si .sx { position: absolute; top: .35rem; right: .35rem; } .si .sb { background: none; border: 0; color: inherit; font: inherit; width: 100%; padding: 0; cursor: pointer; }
@@ -276,6 +281,7 @@
       <div class="addbar">${bar}</div>`; } },
 
     { id: "kitchen", icon: "🍳", label: "Kitchen", accent: "#ffb74d", render: () => {
+      if (PLAN.phase !== "idle") return planPanel();
       if (SUG.phase !== "idle") return sugPanel();
       if (MEALS.state === "loading") return `<h2>Kitchen</h2><p class="sub">Loading…</p>`;
       const live = MEALS.state === "ok", days = [0, 1, 2, 3, 4, 5, 6].map(o => ymd(addDays(new Date(), o)));
@@ -283,7 +289,7 @@
       const tiles = days.map(d => { const p = MEALS.plan.find(x => x.planned_for === d);
         return `<div class="pd"><span class="pl">${dayLabel(d)}</span>` + (p ? `${pic("🍽️", "#ffb74d", PHOTO[p.name])}<b>${esc(p.name)}</b><div class="pa"><button data-act="plan-done" data-id="${esc(p.id)}" data-name="${esc(p.name)}" title="We ate it">✅</button><button data-act="plan-rm" data-id="${esc(p.id)}" title="Remove from plan">✕</button></div>` : `<span class="pe">—</span>`) + "</div>"; }).join("");
       const bar = PICK ? `Plan “${esc(PICK)}” for: ${days.map(d => `<button class="addbtn" data-act="plan-day" data-date="${d}">${dayLabel(d)}</button>`).join("")}<button class="addbtn" data-act="pick-x">Cancel</button>`
-        : voiceBar('<button class="addbtn" data-act="suggest">💡 Suggest a meal</button><button class="addbtn" data-act="add-meal">🎤 Speak</button> <span>“suggest a pumpkin recipe” · “we ate lasagna yesterday” · “plan lasagna for Friday”</span>', "meal");
+        : voiceBar('<button class="addbtn" data-act="suggest">💡 Suggest a meal</button><button class="addbtn go" data-act="plan-week">🗓 Plan the week</button>' + (MEALS.plan.length ? '<button class="addbtn" data-act="plan-shop" title="Add what is missing for the planned dinners to the shopping list">🛒 Shop for the plan</button>' : "") + '<button class="addbtn" data-act="add-meal">🎤 Speak</button> <span>“plan the week” · “we ate lasagna yesterday” · “plan lasagna for Friday”</span>', "meal");
       return `<h2>Kitchen ${live ? '<span class="tag">Live</span>' : tag()}</h2>
       ${MEALS.err ? `<div class="warnbox">⚠ Can't read the meals database: ${esc(MEALS.err)} <button class="addbtn" data-act="meals-retry">Retry</button></div>` : ""}
       <div class="sec">Dinner plan</div><div class="plan">${tiles}</div>
@@ -425,7 +431,7 @@
     } catch (e) { console.warn("calendar:", e.message || e); if (EV.state === "loading") EV = { state: "sample", list: sampleEv() }; }   // keep sample / last good list
     refreshCard("events");
   }
-  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || SUG.phase !== "idle" || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshVoice(); }
+  function setAdd(o) { Object.assign(ADD, o); hold = EVPICK !== null || SUG.phase !== "idle" || PLAN.phase !== "idle" || ["listening", "confirm", "saving", "testing"].includes(ADD.phase); left = DWELL; refreshVoice(); }
   const micDiag = (code) => ` [https: ${window.isSecureContext ? "yes" : "NO"}, speech engine: ${(window.SpeechRecognition || window.webkitSpeechRecognition) ? "yes" : "NO"}${code ? ", code: " + code : ""}]`;
   async function micPreflight() {      // ask for the microphone explicitly so a permission problem is reported clearly
     if (!window.isSecureContext) return "The microphone only works on https pages (this one is " + location.protocol + "). Host the page on GitHub Pages or Cloudflare Pages.";
@@ -580,6 +586,13 @@
     else if (a === "ev-rename") { const e = EV.list[EVPICK]; if (e) { ADD.mode = "rename"; ADD.renameId = e.id; ADD.renameFrom = e.what; listen("event"); } }
     else if (a === "ev-type") { const e = EV.list[EVPICK]; if (!e) return; const n = (window.prompt("New name for “" + e.what + "”", e.what) || "").trim();
       if (n && n !== e.what) { ADD.mode = "rename"; setAdd({ phase: "confirm", target: "event", text: n, plan: { action: "rename", event_id: e.id, new_title: n, say: "Rename “" + e.what + "” to “" + n + "”" } }); } }
+    else if (a === "plan-week") runPlanDraft("");
+    else if (a === "plan-shop") runPlanShop();
+    else if (a === "pw-drop") { const x = PLAN.days[+d.i]; if (x) { x.off = !x.off; refreshCard("kitchen"); } }
+    else if (a === "pw-apply") applyPlan(d.shop === "1");
+    else if (a === "pw-retry") { if (PLAN.retry === "shop") runPlanShop(); else if (PLAN.retry === "apply") applyPlan(PLAN.shopFlag); else runPlanDraft(PLAN.request); }
+    else if (a === "pw-close") closePlan();
+    else if (a === "pw-list") { closePlan(); const i = CARDS.findIndex(c => c.id === "shop"); if (i >= 0) go(i); }
     else if (a === "suggest") runSuggest("something good for dinner tonight");
     else if (a === "suggest-use") runSuggest("use up what is about to expire in the pantry");
     else if (a === "sug-open") { SUG.open = SUG.open === +d.i ? -1 : +d.i; refreshCard("kitchen"); }
@@ -652,6 +665,59 @@
         + (s.uses.length ? `<div class="chips" style="margin:.2rem 0 .6rem">${s.uses.map(u => `<span class="chip dimchip">${foodEmoji(u)} ${esc(u)}</span>`).join("")}</div>` : "")
         + (SUG.open === i ? `<div class="rec"><div class="sec">Ingredients</div><p>${s.ingredients.map(esc).join(" · ")}</p><div class="sec">Steps</div><ol>${s.steps.map(x => `<li>${esc(x)}</li>`).join("")}</ol></div>` : "")
         + `<div class="sa"><button class="addbtn" data-act="sug-open" data-i="${i}">${SUG.open === i ? "Hide recipe" : "📖 Recipe"}</button><button class="addbtn go" data-act="sug-plan" data-i="${i}">📅 Plan</button><button class="addbtn" data-act="sug-save" data-i="${i}">${SUG.saved[i] ? "Saved ✓" : "💡 Save"}</button><button class="addbtn" data-act="sug-say" data-i="${i}" title="Read aloud">🔊</button></div></div>`).join("")}</div>`);
+  /* ===== Plan the week: Claude drafts 7 dinners (calendar, pantry, what you haven't eaten), you approve, and what is missing goes on the shopping list ===== */
+  const PLAN = { phase: "idle", mode: "", retry: "", shopFlag: true, request: "", days: [], kept: [], calendar: true, note: "", msg: "", result: null, timer: 0 };
+  const planRefresh = () => { hold = true; refreshCard("kitchen"); };
+  const goKitchen = () => { const i = CARDS.findIndex(c => c.id === "kitchen"); if (i >= 0) go(i); };
+  function closePlan() { clearTimeout(PLAN.timer); PLAN.phase = "idle"; hold = false; refreshCard("kitchen"); }
+  async function runPlanDraft(request) {
+    setAdd({ phase: "idle", target: "meal" }); clearTimeout(PLAN.timer);
+    Object.assign(PLAN, { phase: "loading", mode: "draft", retry: "draft", request: request || "", days: [], kept: [], note: "", msg: "", result: null });
+    goKitchen(); planRefresh();
+    try { const j = await api("/meal-plan/draft", "POST", { request: PLAN.request }); PLAN.days = j.days.map(x => ({ ...x, off: false })); PLAN.kept = j.kept || []; PLAN.calendar = j.calendar !== false; PLAN.note = j.message || ""; PLAN.phase = "ok"; }
+    catch (e) { PLAN.phase = "error"; PLAN.msg = String(e.message || e); }
+    planRefresh();
+  }
+  function planDone() { clearTimeout(PLAN.timer); PLAN.timer = setTimeout(() => { if (PLAN.phase === "done") closePlan(); }, 45000); }      // the result stays up for a while, then the card goes back to normal
+  async function applyPlan(shop) {
+    const meals = PLAN.days.filter(x => x.name && !x.off).map(x => ({ date: x.date, name: x.name, ingredients: x.ingredients }));
+    if (!meals.length) { PLAN.msg = "Every dinner is switched off. Tap ↺ on one to keep it."; planRefresh(); return; }
+    Object.assign(PLAN, { phase: "saving", mode: "apply", retry: "apply", shopFlag: shop, msg: "", result: null }); planRefresh();
+    try { PLAN.result = await api("/meal-plan/apply", "POST", { meals, shop }); PLAN.phase = "done"; planDone(); }
+    catch (e) { PLAN.phase = "error"; PLAN.msg = String(e.message || e); }
+    loadMeals(); if (shop) loadShop(); planRefresh();
+  }
+  async function runPlanShop() {
+    setAdd({ phase: "idle", target: "meal" }); clearTimeout(PLAN.timer);
+    Object.assign(PLAN, { phase: "saving", mode: "shop", retry: "shop", days: [], kept: [], msg: "", result: null }); goKitchen(); planRefresh();
+    try { PLAN.result = await api("/meal-plan/shop", "POST", {}); PLAN.phase = "done"; planDone(); }
+    catch (e) { PLAN.phase = "error"; PLAN.msg = String(e.message || e); }
+    loadShop(); planRefresh();
+  }
+  const planPanel = () => {
+    const title = PLAN.mode === "shop" ? "Shopping for this week’s dinners" : PLAN.mode === "apply" && PLAN.phase !== "error" ? "Your week’s dinners" : "Next 7 days · Claude’s draft";
+    const head = `<h2>${title} <button class="addbtn" data-act="pw-close" style="margin-left:auto;text-transform:none;letter-spacing:0">Close</button></h2>`;
+    if (PLAN.phase === "loading") return head + `<p class="big">🍳 Planning the week…</p><p class="sub">Looking at your calendar, the pantry and what you haven’t eaten lately. About 15 seconds.</p>`;
+    if (PLAN.phase === "saving") return head + `<p class="big">🛒 Checking the pantry…</p><p class="sub">${PLAN.mode === "shop" ? "Comparing this week’s dinners with what is in the house." : "Saving the dinners and adding what is missing to the shopping list."} About 10 seconds.</p>`;
+    if (PLAN.phase === "error") return head + `<div class="warnbox">⚠ ${esc(PLAN.msg)}</div><div class="addbar"><button class="addbtn" data-act="pw-retry">Try again</button></div>`;
+    if (PLAN.phase === "done") {
+      const r = PLAN.result || {}, n = (a) => (a || []).length, chips = (t, a, cls) => n(a) ? `<div class="sec">${t}</div><div class="chips" style="margin:.4rem 0 1rem">${a.map(x => `<span class="chip ${cls}">${foodEmoji(x)} ${esc(x)}</span>`).join("")}</div>` : "";
+      return head + (r.shop_error ? `<div class="warnbox">⚠ The dinners are saved, but the shopping list didn’t update: ${esc(r.shop_error)} <button class="addbtn" data-act="plan-shop">Try again</button></div>` : "")
+        + (r.planned ? `<p class="big">✅ ${r.planned} dinner${r.planned > 1 ? "s" : ""} planned</p>` : "")
+        + (r.added ? `<p class="${r.planned ? "sub" : "big"}" style="margin-bottom:1rem">${n(r.added) ? (r.planned ? "" : "🛒 ") + n(r.added) + " item" + (n(r.added) > 1 ? "s" : "") + " added to the shopping list" : "Nothing needed buying. You already have it all or it is on the list."}</p>` : "")
+        + `<div style="overflow-y:auto;min-height:0;flex:1">${chips("Added to the shopping list", r.added, "gap")}${chips("You already have", r.have, "dimchip")}${chips("Already on the list", r.on_list, "dimchip")}</div>`
+        + `<div class="addbar">${r.added ? '<button class="addbtn go" data-act="pw-list">🛒 Open the shopping list</button>' : ""}<button class="addbtn" data-act="pw-close">Done</button></div>`;
+    }
+    const rows = [...PLAN.days.map((x, i) => ({ ...x, i })), ...PLAN.kept.map(k => ({ date: k.planned_for, name: k.name, kept: true }))].sort((a, b) => a.date.localeCompare(b.date)), on = PLAN.days.filter(x => x.name && !x.off).length;
+    return head + (PLAN.calendar ? "" : `<div class="warnbox">⚠ I couldn’t read the calendar, so busy evenings aren’t taken into account.</div>`) + (PLAN.msg ? `<div class="warnbox">⚠ ${esc(PLAN.msg)}</div>` : "")
+      + (PLAN.note ? `<p class="sub">${esc(PLAN.note)}</p>` : "")
+      + `<div class="pwk">${rows.map(r => r.kept ? `<div class="pw kept"><span class="pl">${dayLabel(r.date)}</span><div><b>${esc(r.name)}</b><span class="pn">already planned</span></div></div>`
+        : `<div class="pw ${r.off || !r.name ? "off" : ""}"><span class="pl">${dayLabel(r.date)}</span>` + (r.name
+          ? `<div><b>${esc(r.name)}</b><span class="pn">${r.time_min ? "⏱ " + r.time_min + " min · " : ""}${esc(r.why)}${r.busy ? " · 📅 " + esc(r.busy) : ""}</span></div><button class="x" data-act="pw-drop" data-i="${r.i}" title="${r.off ? "Keep this dinner" : "Leave this night out"}">${r.off ? "↺" : "✕"}</button>`
+          : `<div><b style="color:var(--dim)">No dinner at home</b><span class="pn">${esc(r.why)}${r.busy ? " · 📅 " + esc(r.busy) : ""}</span></div>`) + "</div>").join("")}</div>`
+      + (on ? `<div class="addbar">Use ${on === 1 ? "this dinner" : "these " + on + " dinners"}: <button class="addbtn go" data-act="pw-apply" data-shop="1">✅ Plan + shopping list</button><button class="addbtn" data-act="pw-apply" data-shop="0">📅 Plan only</button><button class="addbtn" data-act="pw-retry">🔄 Redo</button></div>`
+        : `<div class="addbar"><button class="addbtn" data-act="pw-retry">🔄 Plan again</button></div>`);
+  };
   const splitItems = (s) => s.split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.replace(/^(?:some|a|an|the|more)\s+/i, "").trim()).filter(Boolean).slice(0, 12);
   const lev = (a, b) => { const m = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { let prev = m[0]; m[0] = i; for (let j = 1; j <= b.length; j++) { const tmp = m[j]; m[j] = Math.min(m[j] + 1, m[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = tmp; } } return m[b.length]; };
   function snapMeal(n) {                 // "lazania" -> "Lasagna": snap to a meal you already log when it is a near match
@@ -664,6 +730,8 @@
     t = t.trim().replace(/[.!?]+$/, ""); const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1), now = new Date(), DAYS = "monday|tuesday|wednesday|thursday|friday|saturday|sunday";
     if (/^(?:please |hey |ok |okay )?(?:suggest|recommend|give me|find me|show me|what (?:should|can|could|do) we (?:cook|eat|have|make)|what(?:'s| is) for dinner|how about|what about|any ideas|ideas for|i(?:'d| would) like|i want|we want|something |a recipe|recipe for|cook something|make something)/i.test(t)
       || (/\brecipes?\b/i.test(t) && !/^(?:we |i )?(?:ate|had|cooked|made|plan|add|save)\b/i.test(t))) return { action: "suggest", request: t };
+    if (/^(?:please |hey |ok |okay )?(?:plan|draft|make|create|build|prepare)\s+(?:me |us )?(?:(?:the|our|my|this|next) )?(?:week(?:'s)?(?: dinners| meals| menu)?|(?:weekly |week's )?(?:dinners|meals|menu)(?: for (?:the|this|next) week| this week)?)$/i.test(t)) return { action: "planweek" };
+    if (/^(?:please )?(?:(?:add|put|get|buy)\s+(?:the )?(?:ingredients|groceries|missing ingredients|what(?:'s| is) missing)\s+(?:for|from)|shop for|do the shopping for)\s+(?:the |this |our |my )?(?:week|meal plan|plan|dinners|week's dinners|week's meals|weekly plan)$/i.test(t)) return { action: "shopplan" };
     let m = t.match(/^(?:add |save |new |remember )?(?:a )?(?:meal )?idea[:,]?\s+(.+)$/i) || t.match(/^(?:add|save)\s+(.+?)\s+(?:to|as)\s+(?:my |our |the )?(?:meal )?ideas$/i);
     if (m) return { action: "idea", name: cap(m[1]) };
     m = t.match(/^(?:we |i )?(?:used up|used|finished|ran out of|are out of|threw away|threw out|got rid of)\s+(?:the |our |all the |some )?(.+)$/i);
@@ -684,11 +752,13 @@
       return { action: "eat", name: snapMeal(cap(m[1])), date: ymd(addDays(now, off)), off }; }
     return null;
   }
-  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "shop" ? `Add ${m.names.map(n => "“" + n + "”").join(", ")} to the shopping list` : m.action === "bought" ? `Mark ${m.names.map(n => "“" + n + "”").join(", ")} as bought` : m.action === "unshop" ? `Remove ${m.names.map(n => "“" + n + "”").join(", ")} from the list` : m.action === "suggest" ? `Ask Claude: “${m.request}”` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
+  const mealSummary = (m) => !m ? "I didn't catch that" : m.action === "plan" ? `Plan “${m.name}” for ${m.when}` : m.action === "shop" ? `Add ${m.names.map(n => "“" + n + "”").join(", ")} to the shopping list` : m.action === "bought" ? `Mark ${m.names.map(n => "“" + n + "”").join(", ")} as bought` : m.action === "unshop" ? `Remove ${m.names.map(n => "“" + n + "”").join(", ")} from the list` : m.action === "planweek" ? "Draft the week’s dinners with Claude" : m.action === "shopplan" ? "Add what is missing for this week’s dinners to the shopping list" : m.action === "suggest" ? `Ask Claude: “${m.request}”` : m.action === "idea" ? `Save “${m.name}” as a meal idea` : m.action === "used" ? `Mark “${m.name}” as used up`
     : `Log “${m.name}” as eaten at home${m.off ? (m.off === -1 ? " yesterday" : ` ${-m.off} days ago`) : ""}`;
   async function saveMeal() {
     const m = parseMeal(ADD.text);
     if (m && m.action === "suggest") return runSuggest(m.request);
+    if (m && m.action === "planweek") return runPlanDraft("");
+    if (m && m.action === "shopplan") return runPlanShop();
     if (!m) return setAdd({ phase: "error", msg: "Try “we ate lasagna” or “plan lasagna for Friday”." });
     if (MEALS.state !== "ok") return setAdd({ phase: "error", msg: "Connect the database first (see the setup notes)." });
     setAdd({ phase: "saving" });
@@ -776,6 +846,10 @@
   }
   const dayWord = (d) => { const n = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - addDays(new Date(), 0)) / 864e5); return n === 0 ? "today" : n === 1 ? "tomorrow" : "on " + d.toLocaleDateString("en-US", { weekday: "long" }); };
   function sayFor(id) {       // what each card says out loud, written like speech rather than read off the screen
+    if (id === "kitchen" && PLAN.phase === "ok") { const wd = (x) => x.date === ymd(new Date()) ? "Tonight" : new Date(x.date + "T00:00").toLocaleDateString("en-US", { weekday: "long" });
+      return "Here is a draft for the week. " + PLAN.days.filter(x => x.name && !x.off).map(x => `${wd(x)}, ${x.name}`).join(". ") + ". Tap Plan and shopping list to save it and add what you are missing."; }
+    if (id === "kitchen" && PLAN.phase === "done" && PLAN.result) { const r = PLAN.result, a = r.added || [];
+      return (r.planned ? `${r.planned} dinners are planned. ` : "") + (a.length ? `I added ${a.length} item${a.length > 1 ? "s" : ""} to the shopping list: ${a.slice(0, 8).join(", ")}${a.length > 8 ? " and more" : ""}. ` : "Nothing needs buying. ") + ((r.have || []).length ? `You already have ${r.have.length} of the ingredients.` : ""); }
     if (id === "kitchen" && SUG.phase === "ok") return "Claude suggests: " + SUG.list.map(s => s.name).join(", ") + ". Tap Recipe, or the speaker on one, for the details.";
     if (id === "kitchen") { const p = MEALS.plan.find(x => x.planned_for === ymd(new Date())), g = MEALS.gaps.slice(0, 2).map(x => `${x.name} in ${since(x.days_since)}`);
       const st = visGaps().filter(x => !x.idea).slice(0, 2).map(x => `${x.name} in ${since(x.days_since)}`), idea = visGaps().filter(x => x.idea).slice(0, 2).map(x => x.name);

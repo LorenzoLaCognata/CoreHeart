@@ -24,6 +24,9 @@
 //   POST /receipt {image: base64 JPEG}   Claude reads a grocery receipt photo: products, receipt lines, and pantry stock with expiry dates.
 //   GET /stock    what is in the house, soonest-to-expire first;  POST /stock/used {id | name}   mark something used up.
 //   POST /meal-idea {name}   save a meal idea (suggested until you cook it);  POST /meals/remove {id}   undo a logged meal.
+//   POST /meal-plan/draft {request?}   Claude drafts the next 7 dinners around your calendar, pantry and what you haven't eaten lately. Nothing is saved.
+//   POST /meal-plan/apply {meals:[{date,name,ingredients?}], shop?}   saves the dinners to the plan and (unless shop is false) adds the ingredients you don't have to the shopping list.
+//   POST /meal-plan/shop   adds the missing ingredients for the dinners already planned in the next 7 days to the shopping list.
 //   GET /cards    the tablet's heads-up feed (core_card). Refreshed from the database at most
 //                 every 3 hours when asked, and by a cron trigger if you add one (optional).
 //   POST /cards/refresh   force a refresh now.
@@ -96,6 +99,7 @@ export default {
     if (url.pathname === "/receipt" && request.method === "POST") return handleReceipt(request, env, allowedOrigin);
     if (url.pathname === "/meals" && request.method === "GET") return handleMeals(env, allowedOrigin);
     if (request.method === "POST" && ["/meals", "/meals/remove", "/meal-plan", "/meal-plan/remove", "/meal-idea"].includes(url.pathname)) return handleMealWrite(url.pathname, request, env, allowedOrigin);
+    if (request.method === "POST" && ["/meal-plan/draft", "/meal-plan/apply", "/meal-plan/shop"].includes(url.pathname)) return handlePlanTools(url.pathname, request, env, allowedOrigin);
     if (url.pathname === "/cards" && request.method === "GET") return handleCards(env, allowedOrigin, false);
     if (url.pathname === "/cards/refresh" && request.method === "POST") return handleCards(env, allowedOrigin, true);
 
@@ -272,6 +276,121 @@ async function handleMealWrite(path, request, env, allowedOrigin) {
   }
 }
 
+// ---- Meal plan -> shopping list: Claude drafts the week around the calendar, pantry and what you haven't eaten lately; what you don't have goes on the list ----
+const PLAN_DAYS = 7;
+const STAPLES = /^(salt|pepper|black pepper|water|ice|oil|olive oil|cooking oil|vegetable oil|cooking spray)$/i;
+const wdayOf = (d) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+const localDateOf = (iso) => new Date(iso).toLocaleDateString("en-CA", { timeZone: HOME_TZ });
+const localTimeOf = (iso) => new Date(iso).toLocaleTimeString("en-US", { timeZone: HOME_TZ, hour: "numeric", minute: "2-digit" });
+const localHourOf = (iso) => { const p = new Intl.DateTimeFormat("en-US", { timeZone: HOME_TZ, hour: "numeric", minute: "numeric", hourCycle: "h23" }).formatToParts(new Date(iso)); return +p.find((x) => x.type === "hour").value + +p.find((x) => x.type === "minute").value / 60; };
+const strList = (a, n, len) => (Array.isArray(a) ? a : []).map((x) => String(x).trim().slice(0, len)).filter(Boolean).slice(0, n);
+
+async function askClaudeJson(env, prompt, maxTokens) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: SUGGEST_MODEL, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Claude API error (${res.status}): ${data?.error?.message || "unknown"}`);
+  const m = (data.content || []).map((c) => c.text || "").join("").match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("Claude didn't send a usable answer. Try again.");
+  try { return JSON.parse(m[0]); } catch (e) { throw new Error("Claude's answer got cut off. Try again."); }
+}
+
+// "2 cups chopped Spinach (fresh), washed" -> "Spinach"
+function cleanIngredient(s) {
+  let t = String(s || "").replace(/\([^)]*\)/g, " ").replace(/,.*$/, "").trim().replace(/^(?:a|an|some|the)\s+/i, "");
+  t = t.replace(/^[\d\s½¼¾⅓⅔\/.\-]+/, "");
+  t = t.replace(/^(?:(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|g|kg|ml|l|cans?|cloves?|bunch(?:es)?|packs?|pkgs?|slices?|pieces?|large|medium|small)\b\.?\s*)+(?:of\s+)?/i, "");
+  t = t.replace(/^(?:(?:finely|roughly|thinly)\s+)?(?:(?:chopped|diced|minced|sliced|grated|shredded|crushed|fresh|ripe)\s+)+/i, "");
+  return cleanItem(t);
+}
+const foodKey = (s) => String(s).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim().replace(/(\w)ies\b/g, "$1y").replace(/(\w)oes\b/g, "$1o").replace(/(\w{2})s\b/g, "$1");
+// Same food if the last words match ("whole milk" ~ "milk") and one name's words contain the other's. "pasta" is not "pasta sauce".
+function sameFood(a, b) {
+  if (!a || !b) return false; if (a === b) return true;
+  const x = a.split(" "), y = b.split(" ");
+  if (x[x.length - 1] !== y[y.length - 1]) return false;
+  const [s, l] = x.length <= y.length ? [x, y] : [y, x]; return s.every((w) => l.includes(w));
+}
+
+async function draftWeek(env, b) {
+  const today = todayStr(), dates = Array.from({ length: PLAN_DAYS }, (_, i) => addDay(today, i)), wish = String(b.request || "").trim().slice(0, 200);
+  const soft = (p) => p.catch(() => null);
+  const [meals, stock, events] = await Promise.all([loadMealData(env), soft(loadStock(env)), soft(loadEvents(env, PLAN_DAYS + 1, 50))]);
+  const planned = new Map(meals.plan.filter((p) => dates.includes(p.planned_for)).map((p) => [p.planned_for, p])), free = dates.filter((d) => !planned.has(d));
+  if (!free.length) return { days: [], kept: [...planned.values()], calendar: !!events, message: "Every night this week already has a dinner planned." };
+
+  const dinnerBusy = new Map(), notes = new Map(dates.map((d) => [d, []]));      // code decides what counts as "busy at dinner"; Claude gets the facts
+  for (const e of events || []) {
+    if (e.allDay) { const d = String(e.start).slice(0, 10); if (notes.has(d)) notes.get(d).push(`all day: ${e.title}`); continue; }
+    const d = localDateOf(e.start); if (!notes.has(d)) continue;
+    const sh = localHourOf(e.start), eh = e.end && localDateOf(e.end) === d ? localHourOf(e.end) : 24;
+    notes.get(d).push(`${localTimeOf(e.start)} ${e.title}`);
+    if (sh < 20.5 && eh > 17) dinnerBusy.set(d, `${localTimeOf(e.start)} ${e.title}`);
+  }
+  const dayLine = (d) => `- ${wdayOf(d)} ${d}${d === today ? " (tonight)" : ""}: ${events ? (notes.get(d).join("; ") || "calendar is free") + (dinnerBusy.has(d) ? " [BUSY AT DINNER TIME]" : "") : "calendar unavailable"}`;
+  const pantry = (stock || []).filter((s) => s.days_left === null || s.days_left >= 0).slice(0, 50).map((s) => `${s.name} (${s.days_left === null ? "?" : s.days_left}d)`).join(", ");
+  const prompt = `You plan home-cooked dinners for two adults. Plan a dinner for each of these days, and only these days:
+${free.map(dayLine).join("\n")}
+${planned.size ? `Already planned (do not plan these days, and do not repeat these dishes): ${[...planned.values()].map((p) => `${wdayOf(p.planned_for)} ${p.planned_for}: ${p.name}`).join("; ")}.\n` : ""}In the pantry (soonest to expire first, days left): ${pantry || "unknown"}.
+Eaten at home recently: ${meals.recent.map((m) => `${m.name} (${m.days_since} days ago)`).join(", ") || "nothing logged"}.
+Not had in a while, good picks: ${meals.gaps.filter((g) => !g.idea).map((g) => `${g.name} (${g.days_since} days)`).join(", ") || "none"}.
+Saved ideas to try: ${meals.gaps.filter((g) => g.idea).map((g) => g.name).join(", ") || "none"}.
+${wish ? `Their wish for this week: ${JSON.stringify(wish)}.\n` : ""}Rules:
+- On a day marked BUSY AT DINNER TIME, pick something that takes 25 minutes or less or can be made ahead. If that calendar entry is itself a meal out (dinner, restaurant, party), set name to null.
+- Use pantry items that expire soon in the first days of the week.
+- Prefer dishes they haven't had in a while and saved ideas, mixed with a few new ones. Don't repeat anything eaten in the last 7 days, and never plan the same dish twice. Vary the main ingredients.
+- ingredients: plain item names only, no quantities and no brands, 3 to 10 per dish. Leave out salt, pepper, cooking oil and water.
+Reply with ONLY this JSON, no markdown: {"days":[{"date":"YYYY-MM-DD","name":"short dish name or null","why":"one short sentence","time_min":number,"uses":["pantry items it uses"],"ingredients":["item"]}]}
+Include exactly one entry per day listed above.`;
+  const parsed = await askClaudeJson(env, prompt, 3500), got = new Map();
+  for (const d of parsed.days || []) { const date = String(d.date || ""); if (free.includes(date) && !got.has(date)) got.set(date, d); }
+  const days = free.map((date) => { const d = got.get(date) || {}, name = d.name ? String(d.name).trim().slice(0, 80) : "";
+    return { date, name: name || null, why: String(d.why || "").slice(0, 200), time_min: Math.max(0, Math.min(600, Math.round(Number(d.time_min) || 0))), uses: strList(d.uses, 4, 40), ingredients: name ? strList(d.ingredients, 12, 60) : [], busy: dinnerBusy.get(date) || "" }; });
+  return { days, kept: dates.filter((d) => planned.has(d)).map((d) => planned.get(d)), calendar: !!events, pantry: !!stock };
+}
+
+// Which of these dishes' ingredients are missing from the pantry? Put those on the shopping list. Dishes without a known ingredient list are looked up with Claude.
+async function shopForMeals(env, meals) {
+  const need = meals.filter((m) => !(m.ingredients || []).length);
+  if (need.length) {
+    const j = await askClaudeJson(env, `For two adults, list what to buy to cook each dish below. Plain item names only, no quantities and no brands, 3 to 10 per dish, leaving out salt, pepper, cooking oil and water.
+Dishes: ${need.map((m) => JSON.stringify(m.name)).join(", ")}
+Reply with ONLY this JSON, no markdown: {"meals":[{"name":"dish exactly as written above","ingredients":["item"]}]}`, 2500);
+    const by = new Map((j.meals || []).map((x) => [String(x.name || "").toLowerCase(), strList(x.ingredients, 12, 60)]));
+    need.forEach((m) => { m.ingredients = by.get(m.name.toLowerCase()) || []; });
+  }
+  const want = new Map();
+  for (const m of meals) for (const ing of m.ingredients || []) { const n = cleanIngredient(ing); if (!n || STAPLES.test(n)) continue; const k = foodKey(n); if (k && ![...want.keys()].some((x) => sameFood(x, k))) want.set(k, n); }      // "Milk" and "Whole milk" from two dishes are one item
+  const stock = (await loadStock(env)).filter((s) => s.days_left === null || s.days_left >= 0).map((s) => foodKey(s.name)), have = [], missing = [];
+  for (const [k, n] of want) (stock.some((s) => sameFood(s, k)) ? have : missing).push(n);
+  const r = missing.length ? await addToShopping(env, missing.slice(0, 60)) : { added: [], duplicates: [] };
+  return { added: r.added, on_list: r.duplicates, have, dishes: meals.length };
+}
+
+async function handlePlanTools(path, request, env, allowedOrigin) {
+  try {
+    const b = await request.json().catch(() => ({})), today = todayStr(), isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
+    if (path === "/meal-plan/draft") return jsonResponse(await draftWeek(env, b), 200, allowedOrigin);
+    if (path === "/meal-plan/apply") {
+      const meals = (Array.isArray(b.meals) ? b.meals : []).map((m) => ({ date: m.date, name: String(m.name || "").trim().slice(0, 80), ingredients: strList(m.ingredients, 12, 60) }))
+        .filter((m) => m.name && isDate(m.date) && m.date >= today && m.date <= addDay(today, PLAN_DAYS - 1)).slice(0, PLAN_DAYS);
+      if (!meals.length) throw new Error("There are no dinners to save.");
+      for (const m of meals) await sb(env, "food_meal_plan?on_conflict=planned_for", { method: "POST", prefer: "resolution=merge-duplicates", body: { planned_for: m.date, name: m.name, status: "planned" } });
+      lastCards = 0;
+      const out = { ok: true, planned: meals.length };
+      if (b.shop !== false) { try { Object.assign(out, await shopForMeals(env, meals)); } catch (e) { out.shop_error = e.message; } }      // the dinners are saved either way
+      return jsonResponse(out, 200, allowedOrigin);
+    }
+    // /meal-plan/shop: the dinners already planned for the next 7 days
+    const rows = await sb(env, `food_meal_plan?select=planned_for,name&status=eq.planned&planned_for=gte.${today}&planned_for=lte.${addDay(today, PLAN_DAYS - 1)}&order=planned_for.asc`);
+    if (!rows.length) throw new Error("Nothing is planned for the next 7 days yet.");
+    return jsonResponse({ ok: true, ...(await shopForMeals(env, rows.map((r) => ({ name: r.name })))) }, 200, allowedOrigin);
+  } catch (err) {
+    return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin);
+  }
+}
+
 // Card refresh: turn the database's "worth your attention" feed into rows the tablet can read.
 let lastCards = 0;
 const MANAGED_KINDS = ["reminder", "stock", "item", "meal_gap", "meal_plan", "budget", "restock"];
@@ -358,6 +477,27 @@ async function handleShopping(env, allowedOrigin) {
   try { return jsonResponse({ items: await loadShopping(env) }, 200, allowedOrigin); }
   catch (err) { return jsonResponse({ error: true, message: dbHint(err.message) }, 200, allowedOrigin); }
 }
+// Put these names on the open list: reuse a known product, create new ones in one batch, and skip what is already wanted.
+async function addToShopping(env, names) {
+  const l = await openList(env, true), items = await sb(env, `food_list_item?select=id,product_id,status&list_id=eq.${l.id}&limit=200`);
+  const [prods, cats] = await Promise.all([sb(env, "food_product?select=id,name,name_en&limit=2000"), sb(env, "food_category?select=id,name_en&limit=100")]);
+  const byName = new Map(); prods.forEach((p) => { byName.set(p.name.toLowerCase(), p); if (p.name_en) byName.set(p.name_en.toLowerCase(), p); });
+  const unknown = [...new Map(names.filter((n) => !byName.has(n.toLowerCase())).map((n) => [n.toLowerCase(), n])).values()];
+  if (unknown.length) {
+    const made = await sb(env, "food_product", { method: "POST", prefer: "return=representation", body: unknown.map((n) => ({ name: n, name_en: n, category_id: cats.find((c) => c.name_en === guessCategory(n))?.id || null })) });
+    unknown.forEach((n, i) => { if (made[i]) byName.set(n.toLowerCase(), made[i]); });
+  }
+  const wanted = new Set(items.filter((i) => i.status === "wanted").map((i) => i.product_id)), added = [], duplicates = [], rows = [];
+  for (const n of names) {
+    const p = byName.get(n.toLowerCase()); if (!p) continue;
+    if (wanted.has(p.id)) { duplicates.push(n); continue; }
+    wanted.add(p.id); added.push(n);
+    const back = items.find((i) => i.product_id === p.id && i.status === "bought");      // bought before, needed again
+    if (back) await sb(env, `food_list_item?id=eq.${back.id}`, { method: "PATCH", body: { status: "wanted" } }); else rows.push({ list_id: l.id, product_id: p.id, qty: 1, status: "wanted" });
+  }
+  if (rows.length) await sb(env, "food_list_item", { method: "POST", body: rows });
+  return { added, duplicates };
+}
 async function handleListEdit(path, request, env, allowedOrigin) {
   try {
     const b = await request.json(), isId = (s) => /^[0-9a-f-]{36}$/i.test(s || ""), names = (Array.isArray(b.names) ? b.names : []).map(cleanItem).filter(Boolean).slice(0, 12);
@@ -370,20 +510,7 @@ async function handleListEdit(path, request, env, allowedOrigin) {
     }
     else if (path === "/shopping/add") {
       if (!names.length) throw new Error("Tell me what to add.");
-      const l = await openList(env, true), items = await sb(env, `food_list_item?select=id,product_id,status&list_id=eq.${l.id}&limit=200`);
-      const [prods, cats] = await Promise.all([sb(env, "food_product?select=id,name,name_en&limit=2000"), sb(env, "food_category?select=id,name_en&limit=100")]);
-      const byName = new Map(); prods.forEach((p) => { byName.set(p.name.toLowerCase(), p); if (p.name_en) byName.set(p.name_en.toLowerCase(), p); });
-      const wanted = new Set(items.filter((i) => i.status === "wanted").map((i) => i.product_id)), added = [], duplicates = [], rows = [];
-      for (const n of names) {
-        let p = byName.get(n.toLowerCase());
-        if (!p) { [p] = await sb(env, "food_product", { method: "POST", prefer: "return=representation", body: { name: n, name_en: n, category_id: cats.find((c) => c.name_en === guessCategory(n))?.id || null } }); byName.set(n.toLowerCase(), p); }
-        if (wanted.has(p.id)) { duplicates.push(n); continue; }
-        wanted.add(p.id); added.push(n);
-        const back = items.find((i) => i.product_id === p.id && i.status === "bought");      // bought before, needed again
-        if (back) await sb(env, `food_list_item?id=eq.${back.id}`, { method: "PATCH", body: { status: "wanted" } }); else rows.push({ list_id: l.id, product_id: p.id, qty: 1, status: "wanted" });
-      }
-      if (rows.length) await sb(env, "food_list_item", { method: "POST", body: rows });
-      out = { ok: true, added, duplicates };
+      out = { ok: true, ...(await addToShopping(env, names)) };
     }
     else if (path === "/shopping/update") {
       if (!isId(b.id) || !["wanted", "bought"].includes(b.status)) throw new Error("Bad request.");
@@ -696,17 +823,19 @@ async function googleToken(env) {
 }
 const calId = (env) => encodeURIComponent(env.GOOGLE_CALENDAR_ID || "primary");
 
+async function loadEvents(env, days = 14, max = 20) {
+  const tok = await googleToken(env);
+  const now = new Date();
+  const q = new URLSearchParams({ timeMin: now.toISOString(), timeMax: new Date(now.getTime() + days * 864e5).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: String(max) });
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId(env)}/events?${q}`, { headers: { Authorization: `Bearer ${tok}` } });
+  const j = await res.json();
+  if (!res.ok) throw new Error(j?.error?.message || res.status);
+  return (j.items || []).filter((e) => e.status !== "cancelled")
+    .map((e) => ({ id: e.id, title: e.summary || "(no title)", start: e.start?.dateTime || e.start?.date, end: e.end?.dateTime || e.end?.date, allDay: !!e.start?.date, location: e.location || "" }));
+}
 async function handleEvents(env, allowedOrigin) {
   try {
-    const tok = await googleToken(env);
-    const now = new Date();
-    const q = new URLSearchParams({ timeMin: now.toISOString(), timeMax: new Date(now.getTime() + 14 * 864e5).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "20" });
-    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calId(env)}/events?${q}`, { headers: { Authorization: `Bearer ${tok}` } });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j?.error?.message || res.status);
-    const events = (j.items || []).filter((e) => e.status !== "cancelled")
-      .map((e) => ({ id: e.id, title: e.summary || "(no title)", start: e.start?.dateTime || e.start?.date, allDay: !!e.start?.date, location: e.location || "" }));
-    return jsonResponse({ events }, 200, allowedOrigin);
+    return jsonResponse({ events: await loadEvents(env, 14, 20) }, 200, allowedOrigin);
   } catch (err) {
     return jsonResponse({ error: true, message: `Calendar failed: ${err.message}` }, 200, allowedOrigin);
   }
